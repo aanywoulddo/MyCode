@@ -120,6 +120,19 @@ class WordCounter {
                 }
             }
 
+            /* Dark theme detection */
+            body.dark-theme .gemini-word-counter,
+            body.dark_mode_toggled .gemini-word-counter {
+                background: #2d2d2f;
+                color: #e8eaed;
+                border: none;
+            }
+
+            body.dark-theme .counter-toggle,
+            body.dark_mode_toggled .counter-toggle {
+                color: #9aa0a6;
+            }
+
             /* Mobile responsive */
             @media (max-width: 768px) {
                 .gemini-word-counter {
@@ -163,8 +176,10 @@ class WordCounter {
                 // Initial count
                 this.updateCount(geminiInput);
                 
-                // Show counter
-                this.showCounter();
+                // Show counter if there's text
+                if (geminiInput.textContent.trim()) {
+                    this.showCounter();
+                }
                 
                 return true;
             }
@@ -267,10 +282,7 @@ class WordCounter {
     }
 }
 
-// Export for use in other modules
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = WordCounter;
-}
-
 // Make available globally
-window.WordCounter = WordCounter;
+if (typeof window !== 'undefined') {
+    window.WordCounter = WordCounter;
+}

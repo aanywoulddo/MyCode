@@ -1551,49 +1551,21 @@
     // --- WORD COUNTER FUNCTIONALITY ---
     let wordCounterInstance = null;
 
-    async function loadWordCounterScript() {
-        if (typeof WordCounter !== 'undefined') {
-            return true;
-        }
-
-        try {
-            const url = chrome.runtime.getURL('word_counter.js');
-            const response = await fetch(url);
-            if (!response.ok) {
-                throw new Error(`Failed to fetch word_counter.js: ${response.status}`);
-            }
-            const scriptContent = await response.text();
-            
-            // Create and execute script
-            const script = document.createElement('script');
-            script.textContent = scriptContent;
-            document.head.appendChild(script);
-            
-            return typeof WordCounter !== 'undefined';
-        } catch (error) {
-            console.error('Error loading word counter script:', error);
-            return false;
-        }
-    }
-
     async function initializeWordCounter() {
-        // Load script if not already loaded
-        const scriptLoaded = await loadWordCounterScript();
-        
-        if (!scriptLoaded) {
-            console.error('Failed to load word counter script');
-            return;
-        }
-
         // Destroy existing instance if it exists
         if (wordCounterInstance) {
             wordCounterInstance.destroy();
+            wordCounterInstance = null;
         }
 
-        // Create new instance
+        // Create new instance - WordCounter is already loaded as a content script
         try {
-            wordCounterInstance = new WordCounter(shadow);
-            console.log('Word counter initialized successfully');
+            if (typeof WordCounter !== 'undefined') {
+                wordCounterInstance = new WordCounter(shadow);
+                console.log('Word counter initialized successfully');
+            } else {
+                console.error('WordCounter class not found');
+            }
         } catch (error) {
             console.error('Error initializing word counter:', error);
         }

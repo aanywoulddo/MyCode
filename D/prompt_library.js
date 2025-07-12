@@ -57,19 +57,19 @@ class PromptLibrary {
             { title: 'Investment Advice', content: 'Provide general investment guidance for someone with [financial situation] and [risk tolerance].', category: 'finance' },
             { title: 'Financial Planning', content: 'Create a basic financial plan for achieving [financial goal] within [timeframe].', category: 'finance' },
         ];
-        this.init();
+        this.isInitialized = false;
     }
 
     init() {
-        // Only setup event listeners if elements exist
-        if (this.shadowRoot.getElementById('prompt-library-modal')) {
+        if (!this.isInitialized) {
             this.setupEventListeners();
+            this.isInitialized = true;
         }
     }
 
-    // Public method to initialize event listeners after HTML is loaded
     initializeEventListeners() {
-        this.setupEventListeners();
+        // This is called after HTML is loaded
+        this.init();
     }
 
     setupEventListeners() {
@@ -79,62 +79,57 @@ class PromptLibrary {
         const searchBar = this.shadowRoot.getElementById('search-bar');
         const categoryFilter = this.shadowRoot.getElementById('category-filter');
         const modal = this.shadowRoot.getElementById('prompt-library-modal');
-
-        console.log('Elements found:', {
+        
+        const elementsFound = {
             closeButton: !!closeButton,
             searchBar: !!searchBar,
             categoryFilter: !!categoryFilter,
             modal: !!modal
-        });
+        };
+        
+        console.log('Elements found:', elementsFound);
 
         if (closeButton) {
-            closeButton.addEventListener('click', () => {
-                console.log('Close button clicked');
-                this.hide();
-            });
+            closeButton.onclick = () => this.hide();
         }
 
         if (searchBar) {
-            searchBar.addEventListener('keyup', () => this.filterPrompts());
+            searchBar.onkeyup = () => this.filterPrompts();
         }
 
         if (categoryFilter) {
-            categoryFilter.addEventListener('change', () => this.filterPrompts());
+            categoryFilter.onchange = () => this.filterPrompts();
         }
 
+        // Click outside to close
         if (modal) {
-            modal.addEventListener('click', (event) => {
+            modal.onclick = (event) => {
                 if (event.target === modal) {
-                    console.log('Modal background clicked');
                     this.hide();
                 }
-            });
+            };
         }
     }
 
     show() {
-        console.log('Showing prompt library modal');
         const modal = this.shadowRoot.getElementById('prompt-library-modal');
         if (modal) {
             modal.style.display = 'block';
             this.loadPrompts();
-        } else {
-            console.error('Modal element not found when trying to show');
         }
     }
 
     hide() {
-        console.log('Hiding prompt library modal');
         const modal = this.shadowRoot.getElementById('prompt-library-modal');
         if (modal) {
             modal.style.display = 'none';
-        } else {
-            console.error('Modal element not found when trying to hide');
         }
     }
 
     loadPrompts(filteredPrompts = this.prompts) {
         const promptList = this.shadowRoot.getElementById('prompt-list');
+        if (!promptList) return;
+        
         promptList.innerHTML = '';
 
         filteredPrompts.forEach(prompt => {
@@ -171,6 +166,8 @@ class PromptLibrary {
                             <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z" fill="currentColor"/>
                         </svg>`;
                     }, 1000);
+                }).catch(err => {
+                    console.error('Failed to copy:', err);
                 });
             });
             
@@ -181,7 +178,7 @@ class PromptLibrary {
     usePrompt(content) {
         // Updated selectors based on the actual Gemini HTML structure
         const selectors = [
-            '.ql-editor.textarea.new-input-ui', // This matches your HTML exactly
+            '.ql-editor.textarea.new-input-ui',
             'rich-textarea .ql-editor',
             '.ql-editor[contenteditable="true"]',
             'div[contenteditable="true"][role="textbox"]'
@@ -232,26 +229,16 @@ class PromptLibrary {
     }
 
     filterPrompts() {
-        const searchBar = this.shadowRoot.getElementById('search-bar');
-        const categoryFilter = this.shadowRoot.getElementById('category-filter');
-        
-        if (!searchBar || !categoryFilter) {
-            console.log('Search bar or category filter not found');
-            return;
-        }
-
-        const searchTerm = searchBar.value.toLowerCase();
-        const category = categoryFilter.value;
-
-        console.log('Filtering prompts - Search:', searchTerm, 'Category:', category);
+        const searchTerm = this.shadowRoot.getElementById('search-bar').value.toLowerCase();
+        const category = this.shadowRoot.getElementById('category-filter').value;
 
         const filtered = this.prompts.filter(prompt => {
-            const matchesSearch = prompt.title.toLowerCase().includes(searchTerm) || prompt.content.toLowerCase().includes(searchTerm);
+            const matchesSearch = prompt.title.toLowerCase().includes(searchTerm) || 
+                                  prompt.content.toLowerCase().includes(searchTerm);
             const matchesCategory = category === 'all' || prompt.category === category;
             return matchesSearch && matchesCategory;
         });
 
-        console.log('Filtered prompts count:', filtered.length);
         this.loadPrompts(filtered);
     }
 } 

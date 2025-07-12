@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Google Gemini Toolbox",
-  "version": "1.0",
-  "description": "Organize your Gemini chats into collapsible folders and access a prompt library.",
+  "name": "Gemini Toolbox",
+  "version": "1.1",
+  "description": "Enhance Gemini with folders, prompt library, and word counter.",
   "permissions": [
     "storage",
     "activeTab",
@@ -11,7 +11,7 @@
   "content_scripts": [
     {
       "matches": ["*://gemini.google.com/*"],
-      "js": ["prompt_library.js", "injector.js"]
+      "js": ["prompt_library.js", "word_counter.js", "injector.js"]
     }
   ],
   "icons": {

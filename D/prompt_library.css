@@ -162,6 +162,7 @@
     transform: translateY(0);
 }
 
+/* Prompt header with copy button */
 .prompt-header {
     display: flex;
     justify-content: space-between;
@@ -169,31 +170,12 @@
     margin-bottom: 8px;
 }
 
-.copy-btn {
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 4px;
-    border-radius: 4px;
-    color: #9aa0a6;
-    transition: all 0.2s ease;
-    opacity: 0;
-}
-
-.prompt-item:hover .copy-btn {
-    opacity: 1;
-}
-
-.copy-btn:hover {
-    background-color: rgba(138, 180, 248, 0.1);
-    color: #8ab4f8;
-}
-
 .prompt-item .title {
     font-size: 16px;
     font-weight: 500;
     color: #e8eaed;
     line-height: 1.4;
+    flex: 1;
 }
 
 .prompt-item .content {
@@ -206,12 +188,34 @@
     overflow: hidden;
 }
 
+/* Copy button */
+.copy-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    color: #9aa0a6;
+    transition: all 0.2s ease;
+    opacity: 0;
+    flex-shrink: 0;
+}
+
+.prompt-item:hover .copy-btn {
+    opacity: 1;
+}
+
+.copy-btn:hover {
+    background-color: rgba(138, 180, 248, 0.1);
+    color: #8ab4f8;
+}
+
 /* Category badge */
 .prompt-item::before {
     content: attr(data-category);
     position: absolute;
     top: 12px;
-    right: 52px;
+    right: 12px;
     background: #8ab4f8;
     color: #1f1f1f;
     padding: 2px 8px;

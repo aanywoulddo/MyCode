@@ -102,72 +102,98 @@ class PromptLibrary {
 
     loadPrompts(filteredPrompts = this.prompts) {
         const promptList = this.shadowRoot.getElementById('prompt-list');
-        promptList.innerHTML = ''; 
+        promptList.innerHTML = '';
 
         filteredPrompts.forEach(prompt => {
             const promptElement = document.createElement('div');
             promptElement.className = 'prompt-item';
             promptElement.setAttribute('data-category', prompt.category);
             promptElement.innerHTML = `
-                <div class="title">${prompt.title}</div>
+                <div class="prompt-header">
+                    <div class="title">${prompt.title}</div>
+                    <button class="copy-btn" title="Copy prompt">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z" fill="currentColor"/>
+                        </svg>
+                    </button>
+                </div>
                 <div class="content">${prompt.content}</div>
             `;
-            promptElement.addEventListener('click', () => this.usePrompt(prompt.content));
+            
+            // Click on prompt inserts it
+            promptElement.addEventListener('click', (e) => {
+                if (!e.target.closest('.copy-btn')) {
+                    this.usePrompt(prompt.content);
+                }
+            });
+            
+            // Copy button functionality
+            const copyBtn = promptElement.querySelector('.copy-btn');
+            copyBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                navigator.clipboard.writeText(prompt.content).then(() => {
+                    copyBtn.innerHTML = '✓';
+                    setTimeout(() => {
+                        copyBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z" fill="currentColor"/>
+                        </svg>`;
+                    }, 1000);
+                });
+            });
+            
             promptList.appendChild(promptElement);
         });
     }
 
     usePrompt(content) {
-        // Try multiple selectors for different Gemini UI versions
+        // Updated selectors based on the actual Gemini HTML structure
         const selectors = [
-            '.ql-editor.textarea.new-input-ui',  // Primary selector from provided HTML
-            '.ql-editor[contenteditable="true"]', // Backup selector
-            'rich-textarea .ql-editor',          // Another variation
-            'div[contenteditable="true"][role="textbox"]', // Generic contenteditable textbox
-            'textarea' // Fallback for older versions
+            '.ql-editor.textarea.new-input-ui', // This matches your HTML exactly
+            'rich-textarea .ql-editor',
+            '.ql-editor[contenteditable="true"]',
+            'div[contenteditable="true"][role="textbox"]'
         ];
 
         let geminiInput = null;
         
-        // Try each selector until we find the input
         for (const selector of selectors) {
             geminiInput = document.querySelector(selector);
             if (geminiInput) {
-                console.log(`Found Gemini input using selector: ${selector}`);
+                console.log(`Found input using: ${selector}`);
                 break;
             }
         }
 
-        if (geminiInput) {
-            // Handle different input types
-            if (geminiInput.tagName.toLowerCase() === 'textarea') {
-                // Traditional textarea
-                geminiInput.value = content;
-                geminiInput.focus();
-            } else if (geminiInput.contentEditable === 'true') {
-                // Contenteditable div (Quill editor)
-                geminiInput.innerHTML = `<p>${content}</p>`;
-                geminiInput.focus();
-                
-                // Trigger input events to notify the application
-                const inputEvent = new Event('input', { bubbles: true });
-                const changeEvent = new Event('change', { bubbles: true });
-                geminiInput.dispatchEvent(inputEvent);
-                geminiInput.dispatchEvent(changeEvent);
-                
-                // Place cursor at the end
-                const selection = window.getSelection();
-                const range = document.createRange();
-                range.selectNodeContents(geminiInput);
-                range.collapse(false);
-                selection.removeAllRanges();
-                selection.addRange(range);
-            }
+        if (geminiInput && geminiInput.contentEditable === 'true') {
+            // Clear existing content first
+            geminiInput.innerHTML = '';
+            
+            // Insert the prompt
+            const p = document.createElement('p');
+            p.textContent = content;
+            geminiInput.appendChild(p);
+            
+            // Remove the ql-blank class if present
+            geminiInput.classList.remove('ql-blank');
+            
+            // Focus the input
+            geminiInput.focus();
+            
+            // Trigger input event for Gemini to recognize the change
+            geminiInput.dispatchEvent(new Event('input', { bubbles: true }));
+            geminiInput.dispatchEvent(new Event('change', { bubbles: true }));
+            
+            // Set cursor at end
+            const range = document.createRange();
+            const sel = window.getSelection();
+            range.selectNodeContents(geminiInput);
+            range.collapse(false);
+            sel.removeAllRanges();
+            sel.addRange(range);
             
             this.hide();
         } else {
-            console.error('Could not find Gemini input field. Available selectors tried:', selectors);
-            // Show user-friendly error
+            console.error('Could not find Gemini input field');
             alert('Could not find the chat input field. Please make sure you are on the Gemini chat page.');
         }
     }

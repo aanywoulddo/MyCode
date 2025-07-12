@@ -162,11 +162,37 @@
     transform: translateY(0);
 }
 
+.prompt-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 8px;
+}
+
+.copy-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    color: #9aa0a6;
+    transition: all 0.2s ease;
+    opacity: 0;
+}
+
+.prompt-item:hover .copy-btn {
+    opacity: 1;
+}
+
+.copy-btn:hover {
+    background-color: rgba(138, 180, 248, 0.1);
+    color: #8ab4f8;
+}
+
 .prompt-item .title {
     font-size: 16px;
     font-weight: 500;
     color: #e8eaed;
-    margin-bottom: 8px;
     line-height: 1.4;
 }
 
@@ -185,7 +211,7 @@
     content: attr(data-category);
     position: absolute;
     top: 12px;
-    right: 12px;
+    right: 52px;
     background: #8ab4f8;
     color: #1f1f1f;
     padding: 2px 8px;
@@ -264,6 +290,15 @@
     .prompt-item::before {
         background: #1a73e8;
         color: #ffffff;
+    }
+    
+    .copy-btn {
+        color: #5f6368;
+    }
+    
+    .copy-btn:hover {
+        background-color: rgba(26, 115, 232, 0.1);
+        color: #1a73e8;
     }
 }
 

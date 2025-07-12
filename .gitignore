@@ -1,0 +1,13 @@
+# Chrome user profile
+chrome-debug-profile/
+
+# Python virtual environment
+venv/
+
+# macOS system files
+.DS_Store
+
+# Log and backup files
+*.txt
+*.py.*
+D_backup2/ 

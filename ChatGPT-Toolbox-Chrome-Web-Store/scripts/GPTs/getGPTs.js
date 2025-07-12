@@ -1,0 +1,1 @@
+(()=>{"use strict";var e={4720:(e,r)=>{Object.defineProperty(r,"__esModule",{value:!0}),r.isAncestorOrSelf=function(e,r){if(e===r)return!0;let t=r.parentElement;for(;t;){if(t===e)return!0;t=t.parentElement}return!1}}},r={};function t(n){var o=r[n];if(void 0!==o)return o.exports;var s=r[n]={exports:{}};return e[n](s,s.exports,t),s.exports}(()=>{const e=t(4720)})()})();

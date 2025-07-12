@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Gemini Folders (Replicated)",
+  "name": "Google Gemini Toolbox",
   "version": "1.0",
-  "description": "Organize your Gemini chats into collapsible folders.",
+  "description": "Organize your Gemini chats into collapsible folders and access a prompt library.",
   "permissions": [
     "storage",
     "activeTab",

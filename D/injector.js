@@ -13,7 +13,7 @@
     const OVERLAY_CONTAINER_SELECTORS = ["div.cdk-overlay-container", '[role="dialog"]', ".modal-container", ".overlay-container"];
 
     let hostElement = null;
-    let shadow;
+    let shadow = null;
     let currentTheme = 'light';
     let isModalOpen = false;
     let promptLibraryInstance;
@@ -502,7 +502,7 @@
         return `
             <div class="modal-header">
                 <h2>Manage Folders</h2>
-                <button class="icon-btn" id="close-modal-btn">&times;</button>
+                <button class="icon-btn" id="close-modal-btn">×</button>
             </div>
             <div class="modal-body">
                 <div class="infi-chatgpt-manageTabs-content">
@@ -683,7 +683,7 @@
              finalHTML = `
                 <div class="modal-header">
                     <h2>${title}</h2>
-                    <button class="icon-btn" id="close-modal-btn">&times;</button>
+                    <button class="icon-btn" id="close-modal-btn">×</button>
                 </div>
                 <div class="modal-body">
                     ${contentHTML}
@@ -1188,9 +1188,9 @@
 
         return `
             <div class="modal-header">
-                <button class="icon-btn" id="back-to-folders-btn">&larr; Back</button>
+                <button class="icon-btn" id="back-to-folders-btn">← Back</button>
                 <h2>${folder.name}</h2>
-                <button class="icon-btn" id="close-modal-btn">&times;</button>
+                <button class="icon-btn" id="close-modal-btn">×</button>
                 </div>
             <div class="modal-body">
                 ${chatListHTML || '<p>No chats in this folder yet.</p>'}

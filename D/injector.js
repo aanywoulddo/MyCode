@@ -1504,7 +1504,7 @@
         shadow.appendChild(styleEl);
     }
 
-    function injectPromptLibraryResources() {
+    async function injectPromptLibraryResources() {
         async function fetchWebAccessibleResource(resourcePath) {
             try {
                 const url = chrome.runtime.getURL(resourcePath);
@@ -1519,21 +1519,23 @@
             }
         }
 
-        fetchWebAccessibleResource('prompt_library.html').then(htmlContent => {
-            if (htmlContent) {
-                const tempDiv = document.createElement('div');
-                tempDiv.innerHTML = htmlContent;
-                shadow.appendChild(tempDiv.firstElementChild);
-            }
-        });
+        // Wait for both HTML and CSS to be loaded
+        const [htmlContent, cssContent] = await Promise.all([
+            fetchWebAccessibleResource('prompt_library.html'),
+            fetchWebAccessibleResource('prompt_library.css')
+        ]);
 
-        fetchWebAccessibleResource('prompt_library.css').then(cssContent => {
-            if (cssContent) {
-                const styleElement = document.createElement('style');
-                styleElement.textContent = cssContent;
-                shadow.appendChild(styleElement);
-            }
-        });
+        if (htmlContent) {
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = htmlContent;
+            shadow.appendChild(tempDiv.firstElementChild);
+        }
+
+        if (cssContent) {
+            const styleElement = document.createElement('style');
+            styleElement.textContent = cssContent;
+            shadow.appendChild(styleElement);
+        }
     }
 
     // --- REFACTORED: INITIALIZATION ---
@@ -1612,14 +1614,17 @@
             await loadData();
             await injectPromptLibraryResources(); // Inject prompt library resources
 
-            // Initialize PromptLibrary
+            // Initialize PromptLibrary after HTML is loaded
             if (typeof PromptLibrary !== 'undefined') {
                 promptLibraryInstance = new PromptLibrary(shadow);
+                // Initialize event listeners now that HTML is loaded
+                promptLibraryInstance.initializeEventListeners();
             } else {
                 // Retry if the script hasn't loaded yet
                 setTimeout(() => {
                     if (typeof PromptLibrary !== 'undefined') {
                         promptLibraryInstance = new PromptLibrary(shadow);
+                        promptLibraryInstance.initializeEventListeners();
                     }
                 }, 500);
             }

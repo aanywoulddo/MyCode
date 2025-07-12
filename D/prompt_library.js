@@ -61,43 +61,76 @@ class PromptLibrary {
     }
 
     init() {
+        // Only setup event listeners if elements exist
+        if (this.shadowRoot.getElementById('prompt-library-modal')) {
+            this.setupEventListeners();
+        }
+    }
+
+    // Public method to initialize event listeners after HTML is loaded
+    initializeEventListeners() {
         this.setupEventListeners();
     }
 
     setupEventListeners() {
+        console.log('Setting up event listeners for prompt library');
+        
         const closeButton = this.shadowRoot.querySelector('.close-button');
         const searchBar = this.shadowRoot.getElementById('search-bar');
         const categoryFilter = this.shadowRoot.getElementById('category-filter');
+        const modal = this.shadowRoot.getElementById('prompt-library-modal');
+
+        console.log('Elements found:', {
+            closeButton: !!closeButton,
+            searchBar: !!searchBar,
+            categoryFilter: !!categoryFilter,
+            modal: !!modal
+        });
 
         if (closeButton) {
-            closeButton.onclick = () => this.hide();
+            closeButton.addEventListener('click', () => {
+                console.log('Close button clicked');
+                this.hide();
+            });
         }
 
         if (searchBar) {
-            searchBar.onkeyup = () => this.filterPrompts();
+            searchBar.addEventListener('keyup', () => this.filterPrompts());
         }
 
         if (categoryFilter) {
-            categoryFilter.onchange = () => this.filterPrompts();
+            categoryFilter.addEventListener('change', () => this.filterPrompts());
         }
 
-        const modal = this.shadowRoot.getElementById('prompt-library-modal');
-        window.onclick = (event) => {
-            if (event.target == modal) {
-                this.hide();
-            }
+        if (modal) {
+            modal.addEventListener('click', (event) => {
+                if (event.target === modal) {
+                    console.log('Modal background clicked');
+                    this.hide();
+                }
+            });
         }
     }
 
     show() {
+        console.log('Showing prompt library modal');
         const modal = this.shadowRoot.getElementById('prompt-library-modal');
-        modal.style.display = 'block';
-        this.loadPrompts();
+        if (modal) {
+            modal.style.display = 'block';
+            this.loadPrompts();
+        } else {
+            console.error('Modal element not found when trying to show');
+        }
     }
 
     hide() {
+        console.log('Hiding prompt library modal');
         const modal = this.shadowRoot.getElementById('prompt-library-modal');
-        modal.style.display = 'none';
+        if (modal) {
+            modal.style.display = 'none';
+        } else {
+            console.error('Modal element not found when trying to hide');
+        }
     }
 
     loadPrompts(filteredPrompts = this.prompts) {
@@ -199,8 +232,18 @@ class PromptLibrary {
     }
 
     filterPrompts() {
-        const searchTerm = this.shadowRoot.getElementById('search-bar').value.toLowerCase();
-        const category = this.shadowRoot.getElementById('category-filter').value;
+        const searchBar = this.shadowRoot.getElementById('search-bar');
+        const categoryFilter = this.shadowRoot.getElementById('category-filter');
+        
+        if (!searchBar || !categoryFilter) {
+            console.log('Search bar or category filter not found');
+            return;
+        }
+
+        const searchTerm = searchBar.value.toLowerCase();
+        const category = categoryFilter.value;
+
+        console.log('Filtering prompts - Search:', searchTerm, 'Category:', category);
 
         const filtered = this.prompts.filter(prompt => {
             const matchesSearch = prompt.title.toLowerCase().includes(searchTerm) || prompt.content.toLowerCase().includes(searchTerm);
@@ -208,6 +251,7 @@ class PromptLibrary {
             return matchesSearch && matchesCategory;
         });
 
+        console.log('Filtered prompts count:', filtered.length);
         this.loadPrompts(filtered);
     }
 } 

@@ -458,6 +458,16 @@
                         </svg>
                         <span>Prompt Library</span>
                     </div>
+                    <div id="word-counter-link" class="dropdown-item">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" stroke="currentColor" stroke-width="2"/>
+                            <polyline points="14,2 14,8 20,8" stroke="currentColor" stroke-width="2"/>
+                            <line x1="16" y1="13" x2="8" y2="13" stroke="currentColor" stroke-width="2"/>
+                            <line x1="16" y1="17" x2="8" y2="17" stroke="currentColor" stroke-width="2"/>
+                            <polyline points="10,9 9,9 8,9" stroke="currentColor" stroke-width="2"/>
+                        </svg>
+                        <span>Word Counter</span>
+                    </div>
                     <div id="bulk-delete-link" class="dropdown-item">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                             <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0v12m4-12v12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -1538,6 +1548,57 @@
         }
     }
 
+    // --- WORD COUNTER FUNCTIONALITY ---
+    let wordCounterInstance = null;
+
+    async function loadWordCounterScript() {
+        if (typeof WordCounter !== 'undefined') {
+            return true;
+        }
+
+        try {
+            const url = chrome.runtime.getURL('word_counter.js');
+            const response = await fetch(url);
+            if (!response.ok) {
+                throw new Error(`Failed to fetch word_counter.js: ${response.status}`);
+            }
+            const scriptContent = await response.text();
+            
+            // Create and execute script
+            const script = document.createElement('script');
+            script.textContent = scriptContent;
+            document.head.appendChild(script);
+            
+            return typeof WordCounter !== 'undefined';
+        } catch (error) {
+            console.error('Error loading word counter script:', error);
+            return false;
+        }
+    }
+
+    async function initializeWordCounter() {
+        // Load script if not already loaded
+        const scriptLoaded = await loadWordCounterScript();
+        
+        if (!scriptLoaded) {
+            console.error('Failed to load word counter script');
+            return;
+        }
+
+        // Destroy existing instance if it exists
+        if (wordCounterInstance) {
+            wordCounterInstance.destroy();
+        }
+
+        // Create new instance
+        try {
+            wordCounterInstance = new WordCounter(shadow);
+            console.log('Word counter initialized successfully');
+        } catch (error) {
+            console.error('Error initializing word counter:', error);
+        }
+    }
+
     // --- REFACTORED: INITIALIZATION ---
 
     async function init() {
@@ -1566,6 +1627,7 @@
             const manageFoldersLink = shadow.getElementById('manage-folders-link');
             const bulkDeleteLink = shadow.getElementById('bulk-delete-link');
             const promptLibraryLink = shadow.getElementById('prompt-library-link');
+            const wordCounterLink = shadow.getElementById('word-counter-link');
             const dropdownArrow = shadow.querySelector('.dropdown-arrow');
             
             // Toggle dropdown on toolbox button click
@@ -1598,6 +1660,14 @@
                 if (promptLibraryInstance) {
                     promptLibraryInstance.show();
                 }
+                toolboxDropdown.style.display = 'none';
+                dropdownArrow.classList.remove('rotated');
+            });
+
+            // Handle word counter link click
+            wordCounterLink.addEventListener('click', (e) => {
+                e.stopPropagation();
+                initializeWordCounter();
                 toolboxDropdown.style.display = 'none';
                 dropdownArrow.classList.remove('rotated');
             });

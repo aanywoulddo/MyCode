@@ -21,7 +21,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["prompt_library.html", "prompt_library.css", "prompt_library.js"],
+      "resources": ["prompt_library.html", "prompt_library.css", "prompt_library.js", "word_counter.js"],
       "matches": ["*://gemini.google.com/*"]
     }
   ]

@@ -17,6 +17,7 @@
     let currentTheme = 'light';
     let isModalOpen = false;
     let promptLibraryInstance;
+    let exportConversationsInstance;
 
     // State object to hold dynamic data, similar to the target's storage module.
     let state = {
@@ -467,6 +468,12 @@
                             <polyline points="10,9 9,9 8,9" stroke="currentColor" stroke-width="2"/>
                         </svg>
                         <span>Word Counter</span>
+                    </div>
+                    <div id="export-conversations-link" class="dropdown-item">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        <span>Export Conversation</span>
                     </div>
                     <div id="bulk-delete-link" class="dropdown-item">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -1548,6 +1555,40 @@
         }
     }
 
+    async function injectExportConversationsResources() {
+        async function fetchWebAccessibleResource(resourcePath) {
+            try {
+                const url = chrome.runtime.getURL(resourcePath);
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch ${resourcePath}: ${response.status}`);
+                }
+                return await response.text();
+            } catch (error) {
+                console.error(`Error fetching web accessible resource ${resourcePath}:`, error);
+                return null;
+            }
+        }
+
+        // Wait for both HTML and CSS to be loaded
+        const [htmlContent, cssContent] = await Promise.all([
+            fetchWebAccessibleResource('export_conversations.html'),
+            fetchWebAccessibleResource('export_conversations.css')
+        ]);
+
+        if (htmlContent) {
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = htmlContent;
+            shadow.appendChild(tempDiv.firstElementChild);
+        }
+
+        if (cssContent) {
+            const styleElement = document.createElement('style');
+            styleElement.textContent = cssContent;
+            shadow.appendChild(styleElement);
+        }
+    }
+
     // --- WORD COUNTER FUNCTIONALITY ---
     let wordCounterInstance = null;
 
@@ -1600,6 +1641,7 @@
             const bulkDeleteLink = shadow.getElementById('bulk-delete-link');
             const promptLibraryLink = shadow.getElementById('prompt-library-link');
             const wordCounterLink = shadow.getElementById('word-counter-link');
+            const exportConversationsLink = shadow.getElementById('export-conversations-link');
             const dropdownArrow = shadow.querySelector('.dropdown-arrow');
             
             // Toggle dropdown on toolbox button click
@@ -1644,6 +1686,16 @@
                 dropdownArrow.classList.remove('rotated');
             });
 
+            // Handle export conversations link click
+            exportConversationsLink.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (exportConversationsInstance) {
+                    exportConversationsInstance.show();
+                }
+                toolboxDropdown.style.display = 'none';
+                dropdownArrow.classList.remove('rotated');
+            });
+
             // Implement click outside to close functionality
             document.addEventListener('click', (e) => {
                 const toolboxContainer = shadow.getElementById('gemini-toolbox-container');
@@ -1655,6 +1707,7 @@
 
             await loadData();
             await injectPromptLibraryResources(); // Inject prompt library resources
+            await injectExportConversationsResources(); // Inject export conversations resources
 
             // Initialize PromptLibrary after HTML is loaded
             if (typeof PromptLibrary !== 'undefined') {
@@ -1667,6 +1720,21 @@
                     if (typeof PromptLibrary !== 'undefined') {
                         promptLibraryInstance = new PromptLibrary(shadow);
                         promptLibraryInstance.initializeEventListeners();
+                    }
+                }, 500);
+            }
+
+            // Initialize ExportConversations after HTML is loaded
+            if (typeof ExportConversations !== 'undefined') {
+                exportConversationsInstance = new ExportConversations(shadow);
+                // Initialize event listeners now that HTML is loaded
+                exportConversationsInstance.initializeEventListeners();
+            } else {
+                // Retry if the script hasn't loaded yet
+                setTimeout(() => {
+                    if (typeof ExportConversations !== 'undefined') {
+                        exportConversationsInstance = new ExportConversations(shadow);
+                        exportConversationsInstance.initializeEventListeners();
                     }
                 }, 500);
             }

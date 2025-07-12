@@ -17,6 +17,7 @@
     let currentTheme = 'light';
     let isModalOpen = false;
     let promptLibraryInstance;
+    let voiceDownloadInstance;
 
     // State object to hold dynamic data, similar to the target's storage module.
     let state = {
@@ -467,6 +468,15 @@
                             <polyline points="10,9 9,9 8,9" stroke="currentColor" stroke-width="2"/>
                         </svg>
                         <span>Word Counter</span>
+                    </div>
+                    <div id="voice-download-link" class="dropdown-item">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" stroke="currentColor" stroke-width="2"/>
+                            <path d="M19 10v2a7 7 0 0 1-14 0v-2" stroke="currentColor" stroke-width="2"/>
+                            <line x1="12" y1="19" x2="12" y2="23" stroke="currentColor" stroke-width="2"/>
+                            <line x1="8" y1="23" x2="16" y2="23" stroke="currentColor" stroke-width="2"/>
+                        </svg>
+                        <span>Voice Download</span>
                     </div>
                     <div id="bulk-delete-link" class="dropdown-item">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -1571,6 +1581,22 @@
         }
     }
 
+    // --- VOICE DOWNLOAD FUNCTIONALITY ---
+    
+    async function initializeVoiceDownload() {
+        if (!voiceDownloadInstance && window.VoiceDownload) {
+            try {
+                voiceDownloadInstance = new window.VoiceDownload(shadow);
+                console.log('Voice download initialized successfully');
+            } catch (error) {
+                console.error('Error initializing voice download:', error);
+            }
+        }
+        if (voiceDownloadInstance) {
+            voiceDownloadInstance.show();
+        }
+    }
+
     // --- REFACTORED: INITIALIZATION ---
 
     async function init() {
@@ -1600,6 +1626,7 @@
             const bulkDeleteLink = shadow.getElementById('bulk-delete-link');
             const promptLibraryLink = shadow.getElementById('prompt-library-link');
             const wordCounterLink = shadow.getElementById('word-counter-link');
+            const voiceDownloadLink = shadow.getElementById('voice-download-link');
             const dropdownArrow = shadow.querySelector('.dropdown-arrow');
             
             // Toggle dropdown on toolbox button click
@@ -1644,6 +1671,14 @@
                 dropdownArrow.classList.remove('rotated');
             });
 
+            // Handle voice download link click
+            voiceDownloadLink.addEventListener('click', (e) => {
+                e.stopPropagation();
+                initializeVoiceDownload();
+                toolboxDropdown.style.display = 'none';
+                dropdownArrow.classList.remove('rotated');
+            });
+
             // Implement click outside to close functionality
             document.addEventListener('click', (e) => {
                 const toolboxContainer = shadow.getElementById('gemini-toolbox-container');
@@ -1667,6 +1702,28 @@
                     if (typeof PromptLibrary !== 'undefined') {
                         promptLibraryInstance = new PromptLibrary(shadow);
                         promptLibraryInstance.initializeEventListeners();
+                    }
+                }, 500);
+            }
+
+            // Initialize VoiceDownload feature
+            if (typeof VoiceDownload !== 'undefined') {
+                try {
+                    voiceDownloadInstance = new VoiceDownload(shadow);
+                    console.log('Voice download auto-initialized successfully');
+                } catch (error) {
+                    console.error('Error auto-initializing voice download:', error);
+                }
+            } else {
+                // Retry if the script hasn't loaded yet
+                setTimeout(() => {
+                    if (typeof VoiceDownload !== 'undefined') {
+                        try {
+                            voiceDownloadInstance = new VoiceDownload(shadow);
+                            console.log('Voice download auto-initialized successfully (delayed)');
+                        } catch (error) {
+                            console.error('Error auto-initializing voice download (delayed):', error);
+                        }
                     }
                 }, 500);
             }

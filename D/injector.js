@@ -1247,70 +1247,14 @@
 
     // --- NEW: CHAT EXPORT MODAL LOGIC ---
     function showChatExportModal() {
-        // Check if modal already exists, remove if it does
-        let modal = shadow.querySelector('#chat-exporter-modal');
-        if (modal) modal.remove();
-
-        // Create modal structure
-        modal = document.createElement('div');
-        modal.id = 'chat-exporter-modal';
-        modal.className = 'gemini-modal-backdrop';
-        
-        modal.innerHTML = `
-            <div class="gemini-modal-content">
-                <div class="gemini-modal-header">
-                    <h2>Select a Chat to Export</h2>
-                    <button class="gemini-modal-close-btn">&times;</button>
-                </div>
-                <div class="gemini-modal-body">
-                    <div id="chat-exporter-list" class="gemini-modal-list">
-                        <div class="gemini-modal-loader">Loading chats...</div>
-                    </div>
-                </div>
-            </div>
-        `;
-
-        shadow.appendChild(modal);
-
-        // Populate chats
-        const chatListContainer = modal.querySelector('#chat-exporter-list');
-        const conversations = getAllConversationElements();
-        
-        if (conversations.length > 0) {
-            chatListContainer.innerHTML = ''; // Clear loader
-            conversations.forEach(chatEl => {
-                const chatId = getChatIdFromElement(chatEl);
-                // Find the title element - try multiple selectors
-                const titleElement = chatEl.querySelector('.conversation-title, .title-text, .mat-button-wrapper, [data-testid="conversation-title"]');
-                const titleText = titleElement?.textContent?.trim();
-
-                if (chatId && titleText) {
-                    const chatItem = document.createElement('div');
-                    chatItem.className = 'gemini-modal-list-item';
-                    chatItem.textContent = titleText;
-                    chatItem.dataset.chatId = chatId;
-                    chatListContainer.appendChild(chatItem);
-                }
-            });
+        // Legacy function maintained for compatibility
+        // The new ExportChat system handles everything internally
+        if (chatExporterInstance) {
+            chatExporterInstance.showExportModal();
         } else {
-            chatListContainer.innerHTML = '<div class="gemini-modal-empty-state">No recent chats found.</div>';
+            console.warn('Chat exporter instance not initialized. Attempting to initialize...');
+            initializeExportChat();
         }
-
-        // Add event listeners
-        modal.querySelector('.gemini-modal-close-btn').onclick = () => modal.remove();
-        modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
-        
-        modal.querySelectorAll('.gemini-modal-list-item').forEach(item => {
-            item.onclick = () => {
-                const chatId = item.dataset.chatId;
-                const chatTitle = item.textContent;
-                modal.remove(); // Close this modal
-                // Hand off to the exporter instance
-                if (chatExporterInstance) {
-                    chatExporterInstance.showFormatSelection(chatId, chatTitle);
-                }
-            };
-        });
     }
 
     // --- NEW: Core Bulk Deletion Logic ---
@@ -1839,30 +1783,30 @@
     // --- EXPORT CHAT FUNCTIONALITY ---
     
     async function initializeExportChat() {
-        if (!chatExporterInstance && window.ChatExporter) {
+        if (!chatExporterInstance && window.ExportChat) {
             try {
-                chatExporterInstance = new window.ChatExporter(shadow);
-                console.log('Chat Exporter initialized successfully');
-                showChatExportModal();
+                chatExporterInstance = new window.ExportChat();
+                console.log('Enhanced Chat Exporter initialized successfully');
+                chatExporterInstance.showExportModal();
             } catch (error) {
-                console.error('Error initializing Chat Exporter:', error);
+                console.error('Error initializing Enhanced Chat Exporter:', error);
             }
         } else if (chatExporterInstance) {
             // If already initialized, just show the modal
-            showChatExportModal();
+            chatExporterInstance.showExportModal();
         } else {
-            // If ChatExporter class is not available, create it directly
-            console.log('ChatExporter class not found, creating from loaded script...');
-            if (typeof ChatExporter !== 'undefined') {
+            // If ExportChat class is not available from window
+            console.log('ExportChat class not found, checking for exportChatInstance...');
+            if (window.exportChatInstance) {
                 try {
-                    chatExporterInstance = new ChatExporter(shadow);
-                    console.log('Chat Exporter initialized successfully');
-                    showChatExportModal();
+                    chatExporterInstance = window.exportChatInstance;
+                    console.log('Enhanced Chat Exporter initialized successfully');
+                    chatExporterInstance.showExportModal();
                 } catch (error) {
-                    console.error('Error initializing Chat Exporter:', error);
+                    console.error('Error initializing Enhanced Chat Exporter:', error);
                 }
             } else {
-                console.error('ChatExporter class not available');
+                console.error('ExportChat class not available');
             }
         }
     }

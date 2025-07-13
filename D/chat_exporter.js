@@ -1,511 +1,1093 @@
-// Gemini Toolbox - chat_exporter.js
+// Gemini Toolbox - Enhanced Chat Export System
 
-class ChatExporter {
-    constructor(shadowRoot) {
-        this.shadowRoot = shadowRoot;
-        this.originalURL = window.location.href;
+window.ExportChat = class ExportChat {
+    constructor() {
+        this.exportSettings = {
+            format: 'pdf',
+            fileName: 'gemini-chat-export',
+            pdfTheme: 'auto',
+            orientation: 'portrait',
+            compression: false
+        };
+        this.selectedChat = null;
     }
 
-    /**
-     * Shows a modal to select the export format for a given chat.
-     * @param {string} chatId The ID of the chat to export.
-     * @param {string} chatTitle The title of the chat.
-     */
-    showFormatSelection(chatId, chatTitle) {
-        let modal = document.createElement('div');
-        modal.id = 'format-selection-modal';
-        modal.className = 'gemini-modal-backdrop';
-        modal.innerHTML = `
-            <div class="gemini-modal-content" style="max-width: 400px;">
-                <div class="gemini-modal-header">
-                    <h2 style="font-size: 18px;">Export "${chatTitle}"</h2>
-                    <button class="gemini-modal-close-btn">&times;</button>
-                </div>
-                <div class="gemini-modal-body format-selector">
-                    <button data-format="pdf" class="format-btn">PDF</button>
-                    <button data-format="html" class="format-btn">HTML</button>
-                    <button data-format="md" class="format-btn">Markdown</button>
-                    <button data-format="txt" class="format-btn">Text</button>
-                    <button data-format="json" class="format-btn">JSON</button>
-                </div>
-            </div>
-        `;
-        this.shadowRoot.appendChild(modal);
-
-        modal.querySelector('.gemini-modal-close-btn').onclick = () => modal.remove();
-        modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
-
-        modal.querySelectorAll('.format-btn').forEach(btn => {
-            btn.onclick = () => {
-                const format = btn.dataset.format;
-                modal.remove();
-                this.startExportProcess(chatId, chatTitle, format);
-            };
-        });
+    init() {
+        this.loadSettings();
+        this.setupEventListeners();
     }
 
-    /**
-     * Orchestrates the entire export process.
-     */
-    async startExportProcess(chatId, chatTitle, format) {
-        this.showOverlay("Navigating to chat...");
-        this.originalURL = window.location.href; // Save current URL
-
-        // Clean the chat ID - remove 'c_' prefix if it exists
-        const cleanChatId = chatId.startsWith('c_') ? chatId.substring(2) : chatId;
-
-        // Navigate to the target chat page using the correct URL format
-        window.location.href = `https://gemini.google.com/app/${cleanChatId}`;
-
+    loadSettings() {
         try {
-            // Wait for the conversation to be loaded on the new page
-            await this.waitForElement('message-content', document, 20000);
-            await this.delay(2000); // Extra delay for content rendering
-
-            this.updateOverlay("Loading full conversation...");
-            await this.scrollToTopAndWait({
-                loadWaitTimeout: 3000,
-                maxTotalTime: 45000,
-                maxScrollAttempts: 150
-            });
-
-            this.updateOverlay("Extracting content...");
-            const conversation = this.extractConversationElements();
-            if (!conversation || conversation.length === 0) {
-                throw new Error("No content could be extracted from the chat. The page may not have finished loading, or the chat format has changed.");
+            const saved = localStorage.getItem('gemini-export-settings');
+            if (saved) {
+                this.exportSettings = { ...this.exportSettings, ...JSON.parse(saved) };
             }
-
-            this.updateOverlay(`Generating ${format.toUpperCase()} file...`);
-            const fileNameBase = chatTitle.replace(/[^a-z0-9_\-]/gi, '_') || "gemini-conversation";
-
-            switch (format) {
-                case 'pdf':
-                    await this.generatePDF(conversation, fileNameBase);
-                    break;
-                case 'html':
-                    this.downloadAsHTML(conversation, fileNameBase);
-                    break;
-                case 'md':
-                    this.downloadAsMarkdown(conversation, fileNameBase);
-                    break;
-                case 'txt':
-                    this.downloadAsTXT(conversation, fileNameBase);
-                    break;
-                case 'json':
-                    this.downloadAsJSON(conversation, fileNameBase);
-                    break;
-            }
-
-            this.updateOverlay("Export successful!", true);
         } catch (error) {
-            console.error("Gemini Exporter Error:", error);
-            this.updateOverlay(`Error: ${error.message}`, true, true);
-        } finally {
-            // After a delay, navigate back to the original page
-            setTimeout(() => {
-                this.hideOverlay();
-                if (window.location.href !== this.originalURL) {
-                    window.location.href = this.originalURL;
-                }
-            }, 3000);
+            console.error('Error loading export settings:', error);
         }
     }
-    
-    // --- UI HELPER METHODS ---
 
-    showOverlay(message) {
-        let overlay = this.shadowRoot.querySelector('#exporter-overlay');
-        if (overlay) overlay.remove();
+    saveSettings() {
+        try {
+            localStorage.setItem('gemini-export-settings', JSON.stringify(this.exportSettings));
+        } catch (error) {
+            console.error('Error saving export settings:', error);
+        }
+    }
 
-        overlay = document.createElement('div');
-        overlay.id = 'exporter-overlay';
-        overlay.innerHTML = `
-            <div class="exporter-overlay-content">
-                <div class="exporter-spinner"></div>
-                <div class="exporter-message">${message}</div>
+    setupEventListeners() {
+        // This will be called from the main injector
+    }
+
+    showExportModal() {
+        // First show chat selection
+        this.showChatSelectionModal();
+    }
+
+    showChatSelectionModal() {
+        const modalHTML = this.getChatSelectionHTML();
+        this.openModal("chat-selection-modal", "Select Chat to Export", modalHTML, 800);
+    }
+
+    showExportOptionsModal(selectedChatId, selectedChatTitle) {
+        const modalHTML = this.getExportModalHTML(selectedChatId, selectedChatTitle);
+        this.openModal("export-options-modal", "Export Chat", modalHTML, 700);
+    }
+
+    getChatSelectionHTML() {
+        const isDark = this.detectTheme() === 'dark';
+        const themeClass = isDark ? 'dark-theme' : 'light-theme';
+        
+        return `
+            <div class="chat-selection-content ${themeClass}">
+                <div class="chat-selection-section">
+                    <h3>Select a Chat to Export</h3>
+                    <div class="chat-search-container">
+                        <input type="text" id="chat-search-input" placeholder="Search chats..." class="chat-search-input">
+                    </div>
+                    <div class="chat-list-container">
+                        <div id="chat-list" class="chat-list">
+                            <!-- Chat list will be populated here -->
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="chat-selection-actions">
+                    <button class="btn-secondary" id="cancel-chat-selection">Cancel</button>
+                    <button class="btn-primary" id="select-chat-btn" disabled>Select Chat</button>
+                </div>
             </div>
         `;
-        this.shadowRoot.appendChild(overlay);
     }
 
-    updateOverlay(message, isFinal = false, isError = false) {
-        const overlay = this.shadowRoot.querySelector('#exporter-overlay');
-        if (!overlay) return;
+    getExportModalHTML(selectedChatId = null, selectedChatTitle = null) {
+        const isDark = this.detectTheme() === 'dark';
+        const themeClass = isDark ? 'dark-theme' : 'light-theme';
+        
+        const selectedChatInfo = selectedChatTitle ? 
+            `<div class="selected-chat-info">
+                <span class="selected-chat-label">Selected Chat:</span>
+                <span class="selected-chat-title">${selectedChatTitle}</span>
+            </div>` : '';
+        
+        return `
+            <div class="export-modal-content ${themeClass}">
+                ${selectedChatInfo}
+                
+                <div class="export-section">
+                    <h3>Export Options</h3>
+                    <div class="export-format-grid">
+                        <div class="format-option" data-format="pdf">
+                            <div class="format-icon">📄</div>
+                            <div class="format-info">
+                                <div class="format-name">PDF</div>
+                                <div class="format-desc">High-quality document</div>
+                            </div>
+                        </div>
+                        <div class="format-option" data-format="html">
+                            <div class="format-icon">🌐</div>
+                            <div class="format-info">
+                                <div class="format-name">HTML</div>
+                                <div class="format-desc">Web page format</div>
+                            </div>
+                        </div>
+                        <div class="format-option" data-format="md">
+                            <div class="format-icon">📝</div>
+                            <div class="format-info">
+                                <div class="format-name">Markdown</div>
+                                <div class="format-desc">Plain text with formatting</div>
+                            </div>
+                        </div>
+                        <div class="format-option" data-format="json">
+                            <div class="format-icon">📊</div>
+                            <div class="format-info">
+                                <div class="format-name">JSON</div>
+                                <div class="format-desc">Structured data</div>
+                            </div>
+                        </div>
+                        <div class="format-option" data-format="txt">
+                            <div class="format-icon">📄</div>
+                            <div class="format-info">
+                                <div class="format-name">Text</div>
+                                <div class="format-desc">Plain text file</div>
+                            </div>
+                        </div>
+                        <div class="format-option" data-format="csv">
+                            <div class="format-icon">📊</div>
+                            <div class="format-info">
+                                <div class="format-name">CSV</div>
+                                <div class="format-desc">Spreadsheet format</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
-        overlay.querySelector('.exporter-message').textContent = message;
+                <div class="export-section">
+                    <h3>Settings</h3>
+                    <div class="setting-group">
+                        <label for="export-filename">File Name:</label>
+                        <input type="text" id="export-filename" value="${this.exportSettings.fileName}" placeholder="Enter file name">
+                    </div>
+                    
+                    <div class="setting-group">
+                        <label>Theme:</label>
+                        <div class="theme-options">
+                            <label class="radio-option">
+                                <input type="radio" name="theme" value="light" ${this.exportSettings.pdfTheme === 'light' ? 'checked' : ''}>
+                                <span>Light</span>
+                            </label>
+                            <label class="radio-option">
+                                <input type="radio" name="theme" value="dark" ${this.exportSettings.pdfTheme === 'dark' ? 'checked' : ''}>
+                                <span>Dark</span>
+                            </label>
+                            <label class="radio-option">
+                                <input type="radio" name="theme" value="auto" ${this.exportSettings.pdfTheme === 'auto' ? 'checked' : ''}>
+                                <span>Auto</span>
+                            </label>
+                        </div>
+                    </div>
 
-        if (isFinal) {
-            const spinner = overlay.querySelector('.exporter-spinner');
-            spinner.style.borderTopColor = isError ? '#d93025' : '#34a853';
-            spinner.style.animation = 'none';
+                    <div class="setting-group">
+                        <label>Orientation:</label>
+                        <div class="orientation-options">
+                            <label class="radio-option">
+                                <input type="radio" name="orientation" value="portrait" ${this.exportSettings.orientation === 'portrait' ? 'checked' : ''}>
+                                <span>Portrait</span>
+                            </label>
+                            <label class="radio-option">
+                                <input type="radio" name="orientation" value="landscape" ${this.exportSettings.orientation === 'landscape' ? 'checked' : ''}>
+                                <span>Landscape</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="setting-group">
+                        <label class="checkbox-option">
+                            <input type="checkbox" id="compression-toggle" ${this.exportSettings.compression ? 'checked' : ''}>
+                            <span>Enable compression (smaller file size)</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="export-section">
+                    <h3>Export Range</h3>
+                    <div class="export-range-options">
+                        <label class="radio-option">
+                            <input type="radio" name="export-range" value="current" checked>
+                            <span>Current conversation</span>
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="export-range" value="selected">
+                            <span>Selected messages</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="export-actions">
+                    <button class="btn-secondary" id="cancel-export">Cancel</button>
+                    <button class="btn-primary" id="start-export">Export Chat</button>
+                </div>
+            </div>
+        `;
+    }
+
+    openModal(id, title, contentHTML, width = 600) {
+        // Create a properly centered modal
+        const modal = document.createElement('div');
+        modal.id = id;
+        modal.className = 'export-modal';
+        modal.innerHTML = `
+            <div class="modal-backdrop"></div>
+            <div class="modal-container" style="max-width: ${width}px;">
+                <div class="modal-header">
+                    <h2>${title}</h2>
+                    <button class="close-btn" id="close-export-modal">×</button>
+                </div>
+                <div class="modal-body">
+                    ${contentHTML}
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+        
+        // Ensure modal is properly centered and visible
+        setTimeout(() => {
+            modal.style.display = 'flex';
+            modal.classList.add('show');
+        }, 10);
+        
+        this.setupModalEventListeners(modal);
+    }
+
+    setupModalEventListeners(modal) {
+        const modalId = modal.id;
+        
+        if (modalId === 'chat-selection-modal') {
+            this.setupChatSelectionListeners(modal);
+        } else if (modalId === 'export-options-modal') {
+            this.setupExportOptionsListeners(modal);
         }
     }
 
-    hideOverlay() {
-        const overlay = this.shadowRoot.querySelector('#exporter-overlay');
-        if (overlay) overlay.remove();
+    setupChatSelectionListeners(modal) {
+        // Load chat list
+        this.loadChatList(modal);
+        
+        // Search functionality
+        const searchInput = modal.querySelector('#chat-search-input');
+        searchInput.addEventListener('input', () => {
+            this.filterChatList(modal, searchInput.value);
+        });
+
+        // Select chat button
+        const selectBtn = modal.querySelector('#select-chat-btn');
+        selectBtn.addEventListener('click', () => {
+            const selectedChat = modal.querySelector('.chat-item.selected');
+            if (selectedChat) {
+                const chatId = selectedChat.dataset.chatId;
+                const chatTitle = selectedChat.querySelector('.chat-title').textContent;
+                this.closeModal(modal);
+                this.navigateToChatAndExport(chatId, chatTitle);
+            }
+        });
+
+        // Cancel button
+        const cancelBtn = modal.querySelector('#cancel-chat-selection');
+        cancelBtn.addEventListener('click', () => {
+            this.closeModal(modal);
+        });
+
+        // Close button
+        const closeBtn = modal.querySelector('#close-export-modal');
+        closeBtn.addEventListener('click', () => {
+            this.closeModal(modal);
+        });
+
+        // Backdrop click
+        const backdrop = modal.querySelector('.modal-backdrop');
+        backdrop.addEventListener('click', () => {
+            this.closeModal(modal);
+        });
     }
 
-    // --- CORE EXPORT LOGIC ---
-    
-    delay(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
-
-    waitForElement(selector, parent = document, timeout = 7000) {
-        return new Promise((resolve, reject) => {
-            const element = parent.querySelector(selector);
-            if (element) {
-                console.log(`[Gemini Exporter] Element '${selector}' found immediately`);
-                return resolve(element);
-            }
-            
-            console.log(`[Gemini Exporter] Waiting for element '${selector}' (timeout: ${timeout}ms)`);
-            const observer = new MutationObserver(() => {
-                const element = parent.querySelector(selector);
-                if (element) {
-                    console.log(`[Gemini Exporter] Element '${selector}' found after waiting`);
-                    observer.disconnect();
-                    resolve(element);
-                }
+    setupExportOptionsListeners(modal) {
+        // Format selection
+        modal.querySelectorAll('.format-option').forEach(option => {
+            option.addEventListener('click', () => {
+                modal.querySelectorAll('.format-option').forEach(opt => opt.classList.remove('selected'));
+                option.classList.add('selected');
+                this.exportSettings.format = option.dataset.format;
             });
-            observer.observe(parent, { childList: true, subtree: true });
-            setTimeout(() => {
-                observer.disconnect();
-                console.error(`[Gemini Exporter] Element '${selector}' not found within ${timeout}ms`);
-                reject(new Error(`Element "${selector}" not found after ${timeout}ms`));
-            }, timeout);
         });
+
+        // Theme selection
+        modal.querySelectorAll('input[name="theme"]').forEach(radio => {
+            radio.addEventListener('change', () => {
+                this.exportSettings.pdfTheme = radio.value;
+            });
+        });
+
+        // Orientation selection
+        modal.querySelectorAll('input[name="orientation"]').forEach(radio => {
+            radio.addEventListener('change', () => {
+                this.exportSettings.orientation = radio.value;
+            });
+        });
+
+        // Compression toggle
+        const compressionToggle = modal.querySelector('#compression-toggle');
+        compressionToggle.addEventListener('change', () => {
+            this.exportSettings.compression = compressionToggle.checked;
+        });
+
+        // Filename input
+        const filenameInput = modal.querySelector('#export-filename');
+        filenameInput.addEventListener('input', () => {
+            this.exportSettings.fileName = filenameInput.value.trim();
+        });
+
+        // Export button
+        const exportBtn = modal.querySelector('#start-export');
+        exportBtn.addEventListener('click', () => {
+            this.performExport(modal);
+        });
+
+        // Cancel button
+        const cancelBtn = modal.querySelector('#cancel-export');
+        cancelBtn.addEventListener('click', () => {
+            this.closeModal(modal);
+        });
+
+        // Close button
+        const closeBtn = modal.querySelector('#close-export-modal');
+        closeBtn.addEventListener('click', () => {
+            this.closeModal(modal);
+        });
+
+        // Backdrop click
+        const backdrop = modal.querySelector('.modal-backdrop');
+        backdrop.addEventListener('click', () => {
+            this.closeModal(modal);
+        });
+
+        // Set initial selected format
+        const currentFormatOption = modal.querySelector(`[data-format="${this.exportSettings.format}"]`);
+        if (currentFormatOption) {
+            currentFormatOption.classList.add('selected');
+        }
+    }
+
+    loadChatList(modal) {
+        const chatList = modal.querySelector('#chat-list');
+        const conversations = this.getAllConversations();
+        
+        if (conversations.length === 0) {
+            chatList.innerHTML = `
+                <div class="no-chats-message">
+                    <p>No conversations found. Please start a conversation first.</p>
+                </div>
+            `;
+            return;
+        }
+
+        const chatListHTML = conversations.map(chat => `
+            <div class="chat-item" data-chat-id="${chat.id}">
+                <div class="chat-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </div>
+                <div class="chat-info">
+                    <div class="chat-title">${chat.title}</div>
+                    <div class="chat-preview">${chat.preview}</div>
+                </div>
+                <div class="chat-date">${chat.date}</div>
+            </div>
+        `).join('');
+
+        chatList.innerHTML = chatListHTML;
+
+        // Add click listeners to chat items
+        chatList.querySelectorAll('.chat-item').forEach(item => {
+            item.addEventListener('click', () => {
+                chatList.querySelectorAll('.chat-item').forEach(chat => chat.classList.remove('selected'));
+                item.classList.add('selected');
+                modal.querySelector('#select-chat-btn').disabled = false;
+            });
+        });
+    }
+
+    filterChatList(modal, searchTerm) {
+        const chatItems = modal.querySelectorAll('.chat-item');
+        const searchLower = searchTerm.toLowerCase();
+
+        chatItems.forEach(item => {
+            const title = item.querySelector('.chat-title').textContent.toLowerCase();
+            const preview = item.querySelector('.chat-preview').textContent.toLowerCase();
+            
+            if (title.includes(searchLower) || preview.includes(searchLower)) {
+                item.style.display = 'flex';
+            } else {
+                item.style.display = 'none';
+            }
+        });
+    }
+
+    getAllConversations() {
+        const conversations = [];
+        
+        // Get all conversation elements from the sidebar
+        const conversationElements = document.querySelectorAll('conversations-list div[data-test-id="conversation"], conversations-list .conversation-item, [data-test-id="conversation"], .conversation-item');
+        
+        conversationElements.forEach((element, index) => {
+            const titleElement = element.querySelector('.conversation-title, .title, h3, h4, [data-test-id="conversation-title"]');
+            const previewElement = element.querySelector('.conversation-preview, .preview, p, [data-test-id="conversation-preview"]');
+            const dateElement = element.querySelector('.conversation-date, .date, time, [data-test-id="conversation-date"]');
+            
+            const title = titleElement ? titleElement.textContent.trim() : `Conversation ${index + 1}`;
+            const preview = previewElement ? previewElement.textContent.trim() : 'No preview available';
+            const date = dateElement ? dateElement.textContent.trim() : '';
+            
+            // Generate a unique ID for the conversation
+            const chatId = this.generateChatId(element, index);
+            
+            conversations.push({
+                id: chatId,
+                title: title,
+                preview: preview.length > 100 ? preview.substring(0, 100) + '...' : preview,
+                date: date,
+                element: element
+            });
+        });
+
+        return conversations;
+    }
+
+    generateChatId(element, index) {
+        // Try to get existing ID from element
+        const existingId = element.getAttribute('data-conversation-id') || 
+                          element.getAttribute('data-chat-id') || 
+                          element.id;
+        
+        if (existingId) {
+            return existingId;
+        }
+        
+        // Generate a new ID based on title and index
+        const titleElement = element.querySelector('.conversation-title, .title, h3, h4');
+        const title = titleElement ? titleElement.textContent.trim() : `conversation-${index}`;
+        const sanitizedTitle = title.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
+        
+        return `chat-${sanitizedTitle}-${index}`;
     }
 
     getScrollHost() {
-        let scrollHost = document.querySelector('#chat-history[data-test-id="chat-history-container"]');
-        if (scrollHost) {
-            console.log("[Gemini Exporter] Found scroll container by specific ID/data-test-id");
-            return scrollHost;
-        }
-        
-        scrollHost = document.querySelector("infinite-scroller.chat-history");
-        if (scrollHost) {
-            console.log("[Gemini Exporter] Found scroll container by custom element name + class");
-            return scrollHost;
-        }
-        
-        scrollHost = document.querySelector(".chat-history-scroll-container");
-        if (scrollHost) {
-            console.log("[Gemini Exporter] Found scroll container by common class name");
-            return scrollHost;
-        }
-        
-        // Check within main conversation area
+        let scroller = document.querySelector('#chat-history[data-test-id="chat-history-container"]');
+        if (scroller) return scroller;
+
+        scroller = document.querySelector("infinite-scroller.chat-history");
+        if (scroller) return scroller;
+
+        scroller = document.querySelector(".chat-history-scroll-container");
+        if (scroller) return scroller;
+
         const mainArea = document.querySelector("main .conversation-area");
         if (mainArea) {
             const divs = mainArea.querySelectorAll("div");
             for (const div of divs) {
-                const computedStyle = window.getComputedStyle(div);
-                if ((computedStyle.overflowY === 'auto' || computedStyle.overflowY === 'scroll') && 
-                    div.clientHeight > 300) {
-                    console.log("[Gemini Exporter] Found potential scroll container by computed style within main area");
+                const style = window.getComputedStyle(div);
+                if ((style.overflowY === "auto" || style.overflowY === "scroll") && div.clientHeight > 300) {
                     return div;
                 }
             }
         }
-        
-        scrollHost = document.querySelector("infinite-scroller");
-        if (scrollHost) {
-            console.warn("[Gemini Exporter] Found scroll container by 'infinite-scroller' tag name (fallback).");
-            return scrollHost;
-        }
-        
-        console.error("[Gemini Exporter] All specific scroll container selectors failed. Falling back to documentElement.");
+
+        scroller = document.querySelector("infinite-scroller");
+        if (scroller) return scroller;
+
         return document.documentElement;
     }
 
     async scrollToTopAndWait(options = {}) {
-        const {
-            loadWaitTimeout = 2000,
-            maxTotalTime = 30000,
-            maxScrollAttempts = 100
-        } = options;
-
-        console.log("[Gemini Exporter] Starting robust scroll to top...");
+        const { loadWaitTimeout = 2000, maxTotalTime = 30000, maxScrollAttempts = 100 } = options;
         return new Promise(async (resolve, reject) => {
             let scroller;
             try {
                 scroller = this.getScrollHost();
-                if (!scroller) {
-                    throw new Error("Scroll container returned null.");
-                }
-                
-                const scrollContent = scroller === document.documentElement ? document.body : scroller;
-                if (scrollContent.scrollHeight <= scrollContent.clientHeight) {
-                    console.log("[Gemini Exporter] Scroller content doesn't exceed its height. No scrolling needed.");
+                if (!scroller) throw new Error("Scroll container returned null.");
+                const scrollElement = scroller === document.documentElement ? document.body : scroller;
+                if (scrollElement.scrollHeight <= scrollElement.clientHeight) {
                     return resolve();
                 }
-            } catch (error) {
-                console.error(`[Gemini Exporter] Error finding scroll container: ${error.message}`);
+            } catch (err) {
                 return reject(new Error("Scroll container lookup failed. Cannot scroll."));
             }
 
             const startTime = Date.now();
-            let scrollAttempts = 0;
-            const conversationSelector = 'div.conversation-container';
-            const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-            const scrollTarget = scroller === document.documentElement ? window : scroller;
+            let attempts = 0;
+            const messageSelector = "div.conversation-container";
+            const delay = ms => new Promise(res => setTimeout(res, ms));
 
-            while (scrollAttempts < maxScrollAttempts) {
+            const scrollHost = scroller === document.documentElement ? window : scroller;
+
+            while (attempts < maxScrollAttempts) {
                 if (Date.now() - startTime > maxTotalTime) {
-                    console.warn(`[Gemini Exporter] Scroll timeout reached after ${maxTotalTime}ms.`);
                     return reject(new Error(`Scroll process timed out after ${maxTotalTime}ms.`));
                 }
 
-                const messagesBeforeScroll = scroller.querySelectorAll(conversationSelector).length;
-                const scrollTopBefore = scrollTarget === window ? window.scrollY : scrollTarget.scrollTop;
-                
-                console.log(`[Gemini Exporter] Scroll attempt ${scrollAttempts + 1}: Current messages: ${messagesBeforeScroll}, ScrollTop: ${scrollTopBefore}`);
+                const currentMessages = scroller.querySelectorAll(messageSelector).length;
+                const currentScrollTop = scrollHost === window ? window.scrollY : scrollHost.scrollTop;
 
-                if (scrollTopBefore === 0 && scrollAttempts > 0) {
-                    console.log("[Gemini Exporter] Reached scrollTop 0. Checking for final loads...");
+                if (currentScrollTop === 0 && attempts > 0) {
                     await delay(loadWaitTimeout);
-                    const messagesAfterWait = scroller.querySelectorAll(conversationSelector).length;
-                    if (messagesAfterWait === messagesBeforeScroll) {
-                        console.log("[Gemini Exporter] ScrollTop is 0 and no new messages loaded after wait. Scrolling complete.");
+                    const newMessages = scroller.querySelectorAll(messageSelector).length;
+                    if (newMessages === currentMessages) {
                         return resolve();
                     }
-                    console.log(`[Gemini Exporter] Messages loaded after reaching top (${messagesBeforeScroll} -> ${messagesAfterWait}). Continuing check.`);
                 }
 
-                // Scroll to top
-                if (scrollTarget === window) {
+                if (scrollHost === window) {
                     window.scrollTo(0, 0);
                 } else {
-                    scrollTarget.scrollTop = 0;
-                    scrollTarget.dispatchEvent(new Event('scroll'));
+                    scrollHost.scrollTop = 0;
+                    scrollHost.dispatchEvent(new Event("scroll"));
                 }
-                console.log("[Gemini Exporter] Scrolled to top (scrollTop set to 0).");
 
-                // Wait for new messages to load
-                let messagesLoaded = false;
-                const waitStartTime = Date.now();
-                while (Date.now() - waitStartTime < loadWaitTimeout) {
-                    const messagesAfterScroll = scroller.querySelectorAll(conversationSelector).length;
-                    if (messagesAfterScroll > messagesBeforeScroll) {
-                        console.log(`[Gemini Exporter] New messages loaded (${messagesBeforeScroll} -> ${messagesAfterScroll}).`);
-                        messagesLoaded = true;
+                let loadedNew = false;
+                const waitStart = Date.now();
+                while (Date.now() - waitStart < loadWaitTimeout) {
+                    const newMessages = scroller.querySelectorAll(messageSelector).length;
+                    if (newMessages > currentMessages) {
+                        loadedNew = true;
                         break;
                     }
-                    
-                    const currentScrollTop = scrollTarget === window ? window.scrollY : scrollTarget.scrollTop;
-                    if (currentScrollTop > 5 && scrollTopBefore === 0) {
-                        console.warn(`[Gemini Exporter] Scroll position changed unexpectedly after scroll attempt (${currentScrollTop}).`);
-                    }
-                    
                     await delay(100);
                 }
 
-                if (!messagesLoaded) {
-                    const finalScrollTop = scrollTarget === window ? window.scrollY : scrollTarget.scrollTop;
+                if (!loadedNew) {
+                    const finalScrollTop = scrollHost === window ? window.scrollY : scrollHost.scrollTop;
                     if (finalScrollTop === 0) {
-                        console.log("[Gemini Exporter] Scrolled, waited, no new messages loaded, and still at scrollTop 0. Assuming end of history.");
                         return resolve();
                     }
-                    console.warn(`[Gemini Exporter] Scrolled, waited, no new messages, but scrollTop is now ${finalScrollTop}. Continuing loop cautiously.`);
                 }
 
-                scrollAttempts++;
+                attempts++;
                 await delay(50);
             }
 
-            console.warn(`[Gemini Exporter] Reached max scroll attempts (${maxScrollAttempts}). Finishing scroll process.`);
             resolve();
         });
     }
 
-    extractConversationElements() {
-        const conversationPairs = [];
-        let scroller;
-        
+    async navigateToChatAndExport(chatId, chatTitle) {
         try {
-            scroller = this.getScrollHost();
-            if (!scroller) {
-                throw new Error("Scroller element not found.");
+            // Find the conversation element
+            let conversationElement = document.querySelector(`[data-conversation-id="${chatId}"], [data-chat-id="${chatId}"], #${chatId}`);
+            
+            if (!conversationElement) {
+                // Fallback: find by title
+                const conversations = this.getAllConversations();
+                const targetConversation = conversations.find(conv => conv.id === chatId || conv.title === chatTitle);
+                if (targetConversation && targetConversation.element) {
+                    conversationElement = targetConversation.element;
+                }
+            }
+
+            if (conversationElement) {
+                // Instead of click, get href if it's a link
+                let navigated = false;
+                if (conversationElement.tagName === 'A' && conversationElement.href) {
+                    window.location.href = conversationElement.href;
+                    navigated = true;
+                } else {
+                    conversationElement.click();
+                    navigated = true;
+                }
+                
+                if (navigated) {
+                    // Wait for the conversation to load
+                    await this.waitForConversationLoad();
+                }
+                
+                // Show export options modal
+                this.showExportOptionsModal(chatId, chatTitle);
+            } else {
+                // Fallback: show export options for current conversation
+                this.showExportOptionsModal(null, 'Current Conversation');
             }
         } catch (error) {
-            console.error("[Gemini Exporter] Could not find chat history scroller for extraction:", error);
-            return conversationPairs;
+            console.error('Error navigating to chat:', error);
+            // Fallback: show export options for current conversation
+            this.showExportOptionsModal(null, 'Current Conversation');
         }
+    }
 
-        const conversationContainers = scroller.querySelectorAll('div.conversation-container');
-        console.log(`[Gemini Exporter] Found ${conversationContainers.length} conversation containers within scroller.`);
+    async waitForConversationLoad() {
+        return new Promise((resolve) => {
+            const maxWait = 10000; // 10 seconds max wait
+            const interval = 200;
+            let elapsed = 0;
 
-        conversationContainers.forEach(container => {
-            const userQueryEl = container.querySelector('user-query, user-query-content');
-            const modelResponseEl = container.querySelector('message-content');
+            const checkForContent = () => {
+                const conversationContent = document.querySelector('div.conversation-container, message-content, user-query, [data-test-id="conversation-content"]');
+                if (conversationContent) {
+                    resolve();
+                } else if (elapsed >= maxWait) {
+                    console.warn('Timeout waiting for conversation load');
+                    resolve(); // Proceed anyway
+                } else {
+                    elapsed += interval;
+                    setTimeout(checkForContent, interval);
+                }
+            };
+            
+            checkForContent();
+        });
+    }
 
-            let questionHTML = '';
-            // Try to get user query text
-            const queryTextLine = userQueryEl?.querySelector('.query-text-line');
-            if (queryTextLine) {
-                questionHTML = queryTextLine.innerHTML.trim();
-            } else if (userQueryEl) {
-                const clonedUserEl = userQueryEl.cloneNode(true);
-                clonedUserEl.querySelectorAll('mat-icon, .icon-button').forEach(el => el.remove());
-                questionHTML = clonedUserEl.innerHTML.trim();
+    closeModal(modal) {
+        modal.classList.remove('show');
+        setTimeout(() => {
+            if (modal.parentNode) {
+                modal.parentNode.removeChild(modal);
+            }
+        }, 300);
+    }
+
+    async performExport(modal) {
+        const format = this.exportSettings.format;
+        const fileName = this.exportSettings.fileName || 'gemini-chat-export';
+        
+        try {
+            await this.scrollToTopAndWait();
+            const chatContent = this.extractChatContent();
+            const exportData = this.formatExportData(chatContent, format);
+            
+            this.downloadFile(exportData, fileName, format);
+            this.showSuccessNotification();
+            this.saveSettings();
+            this.closeModal(modal);
+        } catch (error) {
+            console.error('Export failed:', error);
+            this.showErrorNotification('Export failed. Please try again.');
+        }
+    }
+
+    extractChatContent() {
+        const messages = [];
+        const containers = document.querySelectorAll('div.conversation-container');
+
+        containers.forEach((container, index) => {
+            const userEl = container.querySelector('user-query');
+            if (userEl) {
+                const textEl = userEl.querySelector('.query-text-line');
+                const html = textEl ? textEl.innerHTML : userEl.innerHTML;
+                const text = textEl ? textEl.textContent.trim() : userEl.textContent.trim();
+                messages.push({
+                    role: 'user',
+                    html,
+                    text,
+                    timestamp: new Date().toISOString(),
+                    index
+                });
             }
 
-            let answerHTML = '';
-            // Try to get model response
-            const responseContent = modelResponseEl?.querySelector('.markdown-main-panel, .output-content .markdown, .output-content');
-            if (responseContent) {
-                answerHTML = responseContent.innerHTML.trim();
-            } else if (modelResponseEl) {
-                const clonedResponseEl = modelResponseEl.cloneNode(true);
-                clonedResponseEl.querySelectorAll('message-actions, mat-icon-button, .icon-button, response-actions').forEach(el => el.remove());
-                answerHTML = clonedResponseEl.innerHTML.trim();
-            }
-
-            if (questionHTML || answerHTML) {
-                // Clean up any checkbox containers that might be present
-                const tempQuestionDiv = document.createElement('div');
-                tempQuestionDiv.innerHTML = questionHTML;
-                tempQuestionDiv.querySelectorAll('.gemini-export-checkbox-container').forEach(el => el.remove());
-                
-                const tempAnswerDiv = document.createElement('div');
-                tempAnswerDiv.innerHTML = answerHTML;
-                tempAnswerDiv.querySelectorAll('.gemini-export-checkbox-container').forEach(el => el.remove());
-                
-                conversationPairs.push({ 
-                    question: tempQuestionDiv.innerHTML || null, 
-                    answer: tempAnswerDiv.innerHTML || null 
+            const assistantEl = container.querySelector('message-content');
+            if (assistantEl) {
+                const mdEl = assistantEl.querySelector('.markdown-main-panel, .output-content .markdown, .output-content');
+                const html = mdEl ? mdEl.innerHTML : assistantEl.innerHTML;
+                const text = mdEl ? mdEl.textContent.trim() : assistantEl.textContent.trim();
+                messages.push({
+                    role: 'assistant',
+                    html,
+                    text,
+                    timestamp: new Date().toISOString(),
+                    index
                 });
             }
         });
-
-        return conversationPairs;
+        
+        return {
+            title: this.getConversationTitle(),
+            messages: messages,
+            exportDate: new Date().toISOString(),
+            totalMessages: messages.length
+        };
     }
-    
-    generateFilename(base, ext) {
-        const timestamp = new Date().toISOString().split('T')[0];
-        return `${base}-${timestamp}.${ext}`;
+
+    getConversationTitle() {
+        const titleElement = document.querySelector('.conversation-title, .title, h1, h2, [data-test-id="conversation-title"]');
+        return titleElement ? titleElement.textContent.trim() : 'Gemini Chat Export';
     }
 
-    downloadData(data, filename, type) {
-        const blob = new Blob([data], { type });
-        const url = URL.createObjectURL(blob);
-        chrome.runtime.sendMessage({
-            action: 'downloadFile',
-            url: url,
-            filename: filename
-        }, () => URL.revokeObjectURL(url));
+    formatExportData(chatContent, format) {
+        switch (format) {
+            case 'pdf':
+                return this.formatAsPDF(chatContent);
+            case 'html':
+                return this.formatAsHTML(chatContent);
+            case 'md':
+                return this.formatAsMarkdown(chatContent);
+            case 'json':
+                return this.formatAsJSON(chatContent);
+            case 'txt':
+                return this.formatAsText(chatContent);
+            case 'csv':
+                return this.formatAsCSV(chatContent);
+            default:
+                return this.formatAsText(chatContent);
+        }
+    }
+
+    formatAsPDF(chatContent) {
+        // Use html2pdf to generate actual PDF from HTML
+        const html = this.formatAsHTML(chatContent);
+        const element = document.createElement('div');
+        element.innerHTML = html;
+        const options = {
+            margin: 0.5,
+            filename: `${chatContent.title}.pdf`,
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: { scale: 2 },
+            jsPDF: { unit: 'in', format: 'letter', orientation: this.exportSettings.orientation }
+        };
+        html2pdf().from(element).set(options).save();
+        return ''; // No direct return, as it's handled by html2pdf
+    }
+
+    formatAsHTML(chatContent) {
+        const theme = this.exportSettings.pdfTheme === 'auto' ? this.detectTheme() : this.exportSettings.pdfTheme;
+        const isDark = theme === 'dark';
+        
+        return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${chatContent.title}</title>
+    <style>
+        body {
+            font-family: 'Google Sans', 'Roboto', sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background: ${isDark ? '#1a1a1a' : '#ffffff'};
+            color: ${isDark ? '#ffffff' : '#000000'};
+        }
+        .chat-container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .chat-header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid ${isDark ? '#333' : '#e0e0e0'};
+        }
+        .chat-title {
+            font-size: 24px;
+            font-weight: 500;
+            margin-bottom: 10px;
+        }
+        .chat-meta {
+            font-size: 14px;
+            color: ${isDark ? '#888' : '#666'};
+        }
+        .message {
+            margin-bottom: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid;
+        }
+        .message.user {
+            background: ${isDark ? '#2a2a2a' : '#f8f9fa'};
+            border-left-color: #4285f4;
+        }
+        .message.assistant {
+            background: ${isDark ? '#333' : '#ffffff'};
+            border-left-color: #34a853;
+            border: 1px solid ${isDark ? '#444' : '#e0e0e0'};
+        }
+        .message-role {
+            font-weight: 500;
+            font-size: 12px;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+            color: ${isDark ? '#888' : '#666'};
+        }
+        .message-content {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .export-footer {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid ${isDark ? '#333' : '#e0e0e0'};
+            text-align: center;
+            font-size: 12px;
+            color: ${isDark ? '#888' : '#666'};
+        }
+        @media print {
+            body { margin: 0; }
+            .chat-container { max-width: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <div class="chat-header">
+            <div class="chat-title">${chatContent.title}</div>
+            <div class="chat-meta">
+                Exported on ${new Date(chatContent.exportDate).toLocaleString()} | 
+                ${chatContent.totalMessages} messages
+            </div>
+        </div>
+        
+        ${chatContent.messages.map(message => `
+            <div class="message ${message.role}">
+                <div class="message-role">${message.role}</div>
+                <div class="message-content">${message.html}</div>
+            </div>
+        `).join('')}
+        
+        <div class="export-footer">
+            Exported using Gemini Toolbox Export Chat Feature
+        </div>
+    </div>
+</body>
+</html>`;
+    }
+
+    formatAsMarkdown(chatContent) {
+        let markdown = `# ${chatContent.title}\n\n`;
+        markdown += `**Exported on:** ${new Date(chatContent.exportDate).toLocaleString()}\n`;
+        markdown += `**Total messages:** ${chatContent.totalMessages}\n\n`;
+        markdown += `---\n\n`;
+        
+        chatContent.messages.forEach(message => {
+            markdown += `### ${message.role.charAt(0).toUpperCase() + message.role.slice(1)}\n\n`;
+            markdown += `${this.convertHtmlToMarkdown(message.html)}\n\n`;
+            markdown += `---\n\n`;
+        });
+        
+        return markdown;
+    }
+
+    formatAsJSON(chatContent) {
+        const jsonContent = {
+            ...chatContent,
+            messages: chatContent.messages.map(msg => ({ ...msg, html: msg.html, text: msg.text }))
+        };
+        return JSON.stringify(jsonContent, null, 2);
+    }
+
+    formatAsText(chatContent) {
+        let text = `${chatContent.title}\n`;
+        text += `Exported on: ${new Date(chatContent.exportDate).toLocaleString()}\n`;
+        text += `Total messages: ${chatContent.totalMessages}\n\n`;
+        text += `==========================================\n\n`;
+        
+        chatContent.messages.forEach(message => {
+            text += `${message.role.toUpperCase()}:\n`;
+            text += `${message.text}\n\n`;
+            text += `------------------------------------------\n\n`;
+        });
+        
+        return text;
+    }
+
+    formatAsCSV(chatContent) {
+        let csv = 'Role,Content,Timestamp\n';
+        
+        chatContent.messages.forEach(message => {
+            const escapedContent = `"${message.text.replace(/"/g, '""')}"`;
+            csv += `${message.role},${escapedContent},${message.timestamp}\n`;
+        });
+        
+        return csv;
     }
 
     convertHtmlToMarkdown(html) {
-        if (!html) return "";
-        let markdown = html;
-        // Basic conversions; a more robust library might be needed for complex cases
-        markdown = markdown.replace(/<p>(.*?)<\/p>/gi, '$1\n\n');
-        markdown = markdown.replace(/<br\s*\/?>/gi, '\n');
-        markdown = markdown.replace(/<strong>(.*?)<\/strong>/gi, '**$1**');
-        markdown = markdown.replace(/<em>(.*?)<\/em>/gi, '*$1*');
-        markdown = markdown.replace(/<h1>(.*?)<\/h1>/gi, '# $1\n');
-        markdown = markdown.replace(/<h2>(.*?)<\/h2>/gi, '## $1\n');
-        markdown = markdown.replace(/<h3>(.*?)<\/h3>/gi, '### $1\n');
-        markdown = markdown.replace(/<li>(.*?)<\/li>/gi, '* $1\n');
-        markdown = markdown.replace(/<pre><code>(.*?)<\/code><\/pre>/gis, '```\n$1\n```\n');
-        markdown = markdown.replace(/<code>(.*?)<\/code>/gi, '`$1`');
-        // Strip remaining tags
+        if (!html) return '';
+        let content = html;
         const tempDiv = document.createElement('div');
-        tempDiv.innerHTML = markdown;
-        return tempDiv.textContent || tempDiv.innerText || '';
-    }
 
-    formatConversationHTML(conversation, title, theme = 'light') {
-        const isDark = theme === 'dark';
-        const styles = `
-            body { font-family: sans-serif; margin: 0; padding: 2em; background-color: ${isDark ? '#131314' : '#fff'}; color: ${isDark ? '#e3e3e3' : '#202124'}; }
-            .wrapper { max-width: 800px; margin: auto; }
-            h1 { font-size: 24px; border-bottom: 1px solid #ccc; padding-bottom: 10px; }
-            .pair { margin-bottom: 2em; }
-            .question, .answer { padding: 1em; border-radius: 8px; }
-            .question { background-color: ${isDark ? '#1e1e1f' : '#f0f4f9'}; }
-            .answer { background-color: ${isDark ? '#2a2a2c' : '#f8f9fa'}; margin-top: 1em; }
-            .label { font-weight: bold; margin-bottom: 0.5em; color: ${isDark ? '#8ab4f8' : '#1a73e8'}; }
-            code-block, pre { background-color: ${isDark ? '#202124' : '#e8eaed'} !important; padding: 1em; border-radius: 8px; overflow-x: auto; font-family: monospace; }
-        `;
-        let body = `<h1>${title}</h1><p><i>Exported on: ${new Date().toLocaleString()}</i></p>`;
-        conversation.forEach(c => {
-            body += '<div class="pair">';
-            if (c.question) body += `<div class="question"><div class="label">User</div><div>${c.question}</div></div>`;
-            if (c.answer) body += `<div class="answer"><div class="label">Gemini</div><div>${c.answer}</div></div>`;
-            body += '</div>';
-        });
-
-        return `<!DOCTYPE html><html><head><title>${title}</title><style>${styles}</style></head><body><div class="wrapper">${body}</div></body></html>`;
-    }
-
-    async generatePDF(conversation, fileNameBase) {
-        const theme = document.body.classList.contains('dark-theme') ? 'dark' : 'light';
-        const htmlContent = this.formatConversationHTML(conversation, fileNameBase, theme);
-        const fileName = this.generateFilename(fileNameBase, 'pdf');
-        
-        // Use the html2pdf library already included in your extension
-        if (typeof html2pdf === 'undefined') {
-            throw new Error('html2pdf.js is not loaded.');
+        function processNode(node) {
+            if (!node || typeof node.nodeName !== 'string') return '';
+            let md = '';
+            switch (node.nodeName) {
+                case '#text':
+                    md = (node.textContent || '').replace(/([*_~])/g, '\\$1');
+                    break;
+                case 'P':
+                    md = processChildren(node) + '\n\n';
+                    break;
+                case 'H1':
+                    md = '# ' + processChildren(node) + '\n\n';
+                    break;
+                case 'H2':
+                    md = '## ' + processChildren(node) + '\n\n';
+                    break;
+                case 'H3':
+                    md = '### ' + processChildren(node) + '\n\n';
+                    break;
+                case 'H4':
+                    md = '#### ' + processChildren(node) + '\n\n';
+                    break;
+                case 'H5':
+                    md = '##### ' + processChildren(node) + '\n\n';
+                    break;
+                case 'H6':
+                    md = '###### ' + processChildren(node) + '\n\n';
+                    break;
+                case 'UL':
+                    md = Array.from(node.children).map(li => '* ' + processChildren(li).trim()).join('\n') + '\n\n';
+                    break;
+                case 'OL':
+                    md = Array.from(node.children).map((li, idx) => `${idx + 1}. ${processChildren(li).trim()}`).join('\n') + '\n\n';
+                    break;
+                case 'LI':
+                case 'DIV':
+                case 'SPAN':
+                default:
+                    md = processChildren(node);
+                    break;
+                case 'A':
+                    md = `[${processChildren(node)}](${node.href || ''})`;
+                    break;
+                case 'STRONG':
+                case 'B':
+                    md = '**' + processChildren(node) + '**';
+                    break;
+                case 'EM':
+                case 'I':
+                    md = '*' + processChildren(node) + '*';
+                    break;
+                case 'CODE-BLOCK':
+                    const preCode = node.querySelector('pre code, pre');
+                    const langMatch = preCode?.className?.match(/language-(\S+)/);
+                    md = `\`\`\`${langMatch ? langMatch[1] : ''}\n${preCode?.textContent || node.textContent || ''}\n\`\`\`\n\n`;
+                    break;
+                case 'PRE':
+                    md = node.closest('code-block') ? processChildren(node) : `\`\`\`\n${node.textContent || ''}\n\`\`\`\n\n`;
+                    break;
+                case 'CODE':
+                    md = node.closest('pre, code-block') ? node.textContent || '' : '`' + node.textContent + '`';
+                    break;
+                case 'BLOCKQUOTE':
+                    md = '> ' + processChildren(node).replace(/\n/g, '\n> ') + '\n\n';
+                    break;
+                case 'HR':
+                    md = '---\n\n';
+                    break;
+                case 'TABLE':
+                    const headerRow = node.querySelector('thead tr, tr:first-child');
+                    const bodyRows = Array.from(node.querySelectorAll('tbody tr, tr:not(:first-child)'));
+                    let tableMd = '';
+                    if (headerRow) {
+                        const headers = Array.from(headerRow.querySelectorAll('th, td')).map(th => processChildren(th).trim());
+                        tableMd += `| ${headers.join(' | ')} |\n`;
+                        tableMd += `| ${headers.map(() => '---').join(' | ')} |\n`;
+                    }
+                    bodyRows.forEach(row => {
+                        const cells = Array.from(row.querySelectorAll('td')).map(td => processChildren(td).trim());
+                        tableMd += `| ${cells.join(' | ')} |\n`;
+                    });
+                    md = tableMd + '\n';
+                    break;
+                case 'IMG':
+                    md = `![${node.alt || 'image'}](${node.src || ''})\n`;
+                    break;
+                case 'BR':
+                    md = '  \n';
+                    break;
+            }
+            return md;
         }
 
-        const opt = {
-            margin: 0.5,
-            filename: fileName,
-            image: { type: 'jpeg', quality: 0.98 },
-            html2canvas: { scale: 2, useCORS: true, backgroundColor: theme === 'dark' ? '#131314' : '#ffffff' },
-            jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' }
-        };
+        function processChildren(node) {
+            return node && node.childNodes ? Array.from(node.childNodes).map(processNode).join('') : '';
+        }
 
-        // html2pdf returns a promise-like object
-        await html2pdf().from(htmlContent).set(opt).save();
+        tempDiv.innerHTML = html;
+        tempDiv.querySelectorAll('div.code-block-decoration, sources-carousel-inline, sources-carousel, source-footnote').forEach(el => el.remove());
+        content = processChildren(tempDiv);
+        content = content.replace(/\n{3,}/g, '\n\n').trim();
+        return content;
     }
 
-    downloadAsHTML(conversation, fileNameBase) {
-        const theme = document.body.classList.contains('dark-theme') ? 'dark' : 'light';
-        const htmlContent = this.formatConversationHTML(conversation, fileNameBase, theme);
-        const fileName = this.generateFilename(fileNameBase, 'html');
-        this.downloadData(htmlContent, fileName, 'text/html;charset=utf-8');
-    }
-    
-    downloadAsMarkdown(conversation, fileNameBase) {
-        let content = `# ${fileNameBase}\n\n---\n\n`;
-        conversation.forEach(c => {
-            if (c.question) content += `**User:**\n${this.convertHtmlToMarkdown(c.question)}\n\n`;
-            if (c.answer) content += `**Gemini:**\n${this.convertHtmlToMarkdown(c.answer)}\n\n`;
-            content += '---\n\n';
+    downloadFile(content, fileName, format) {
+        if (format === 'pdf') return; // Handled in formatAsPDF
+        const blob = new Blob([content], { 
+            type: this.getMimeType(format) 
         });
-        const fileName = this.generateFilename(fileNameBase, 'md');
-        this.downloadData(content, fileName, 'text/markdown;charset=utf-8');
+        
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${fileName}.${format}`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
     }
 
-    downloadAsTXT(conversation, fileNameBase) {
-        let content = `${fileNameBase}\n\n`;
-        const tempDiv = document.createElement('div');
-        conversation.forEach(c => {
-            if (c.question) {
-                tempDiv.innerHTML = c.question;
-                content += `User:\n${tempDiv.textContent || tempDiv.innerText}\n\n`;
-            }
-            if (c.answer) {
-                tempDiv.innerHTML = c.answer;
-                content += `Gemini:\n${tempDiv.textContent || tempDiv.innerText}\n\n`;
-            }
-            content += '----------------------------------------\n\n';
-        });
-        const fileName = this.generateFilename(fileNameBase, 'txt');
-        this.downloadData(content, fileName, 'text/plain;charset=utf-8');
-    }
-
-    downloadAsJSON(conversation, fileNameBase) {
-        const data = {
-            title: fileNameBase,
-            exportedAt: new Date().toISOString(),
-            conversation: conversation
+    getMimeType(format) {
+        const mimeTypes = {
+            'pdf': 'application/pdf',
+            'html': 'text/html',
+            'md': 'text/markdown',
+            'json': 'application/json',
+            'txt': 'text/plain',
+            'csv': 'text/csv'
         };
-        const fileName = this.generateFilename(fileNameBase, 'json');
-        this.downloadData(JSON.stringify(data, null, 2), fileName, 'application/json;charset=utf-8');
+        return mimeTypes[format] || 'text/plain';
     }
+
+    showSuccessNotification() {
+        const notification = document.createElement('div');
+        notification.className = 'export-success-notification';
+        notification.innerHTML = `
+            <span>✅</span>
+            <span>Chat exported successfully!</span>
+        `;
+        
+        document.body.appendChild(notification);
+        
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.parentNode.removeChild(notification);
+            }
+        }, 3000);
+    }
+
+    showErrorNotification(message) {
+        const notification = document.createElement('div');
+        notification.className = 'export-success-notification';
+        notification.style.background = '#f44336';
+        notification.innerHTML = `
+            <span>❌</span>
+            <span>${message}</span>
+        `;
+        
+        document.body.appendChild(notification);
+        
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.parentNode.removeChild(notification);
+            }
+        }, 3000);
+    }
+
+    detectTheme() {
+        const body = document.body;
+        if (body.classList.contains('dark-theme') || body.classList.contains('dark_mode_toggled')) {
+            return 'dark';
+        }
+        
+        const htmlTheme = document.documentElement.getAttribute('data-theme');
+        if (htmlTheme === 'dark') {
+            return 'dark';
+        }
+        
+        const bodyBgColor = window.getComputedStyle(body).backgroundColor;
+        if (bodyBgColor) {
+            const rgb = bodyBgColor.match(/\d+/g);
+            if (rgb && rgb.length >= 3) {
+                const brightness = (parseInt(rgb[0]) * 299 + parseInt(rgb[1]) * 587 + parseInt(rgb[2]) * 114) / 1000;
+                return brightness < 128 ? 'dark' : 'light';
+            }
+        }
+        
+        return 'light';
+    }
+}
+
+// Initialize the ExportChat system
+if (typeof window !== 'undefined') {
+    window.exportChatInstance = new ExportChat();
+    window.exportChatInstance.init();
 }

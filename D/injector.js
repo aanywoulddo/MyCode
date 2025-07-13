@@ -18,7 +18,7 @@
     let isModalOpen = false;
     let promptLibraryInstance;
     let voiceModeInstance;
-    let exportChatInstance;
+    let chatExporterInstance;
 
     // State object to hold dynamic data, similar to the target's storage module.
     let state = {
@@ -408,6 +408,156 @@
             .dark-theme .danger {
                 background-color: var(--gf-accent-danger-dark);
                 color: #202124;
+            }
+
+            /* Chat Exporter Styles */
+            .gemini-modal-backdrop {
+                position: fixed;
+                z-index: 2000;
+                left: 0;
+                top: 0;
+                width: 100%;
+                height: 100%;
+                background-color: rgba(0, 0, 0, 0.6);
+                backdrop-filter: blur(4px);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+
+            .gemini-modal-content {
+                background-color: var(--gf-bg-primary);
+                color: var(--gf-text-primary);
+                border: 1px solid var(--gf-border-color);
+                width: 90%;
+                max-width: 600px;
+                border-radius: 12px;
+                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+                display: flex;
+                flex-direction: column;
+                max-height: 80vh;
+            }
+
+            .gemini-modal-header {
+                padding: 16px 24px;
+                border-bottom: 1px solid var(--gf-border-color);
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                flex-shrink: 0;
+            }
+
+            .gemini-modal-header h2 {
+                margin: 0;
+                font-size: 20px;
+                font-weight: 500;
+            }
+
+            .gemini-modal-close-btn {
+                background: none;
+                border: none;
+                color: var(--gf-text-secondary);
+                font-size: 28px;
+                font-weight: 300;
+                cursor: pointer;
+                line-height: 1;
+                padding: 4px;
+                border-radius: 50%;
+                transition: all 0.2s;
+            }
+            .gemini-modal-close-btn:hover {
+                background-color: var(--gf-hover-bg);
+                color: var(--gf-text-primary);
+            }
+
+            .gemini-modal-body {
+                padding: 16px 24px;
+                overflow-y: auto;
+                flex-grow: 1;
+            }
+
+            .gemini-modal-list {
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+            }
+
+            .gemini-modal-list-item {
+                padding: 12px 16px;
+                background-color: var(--gf-bg-secondary);
+                border-radius: 8px;
+                cursor: pointer;
+                transition: background-color 0.2s;
+                font-size: 14px;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            .gemini-modal-list-item:hover {
+                background-color: var(--gf-hover-bg);
+            }
+
+            .gemini-modal-empty-state, .gemini-modal-loader {
+                text-align: center;
+                padding: 40px;
+                color: var(--gf-text-secondary);
+                font-style: italic;
+            }
+
+            .format-selector {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+                gap: 12px;
+            }
+
+            .format-btn {
+                padding: 12px;
+                font-size: 14px;
+                font-weight: 500;
+                border-radius: 8px;
+                cursor: pointer;
+                background-color: var(--gf-bg-secondary);
+                color: var(--gf-text-primary);
+                border: 1px solid var(--gf-border-color);
+                transition: all 0.2s;
+            }
+            .format-btn:hover {
+                background-color: var(--gf-accent-primary);
+                color: var(--gf-bg-primary);
+                border-color: var(--gf-accent-primary);
+            }
+
+            #exporter-overlay {
+                position: fixed;
+                top: 0; left: 0; width: 100vw; height: 100vh;
+                background-color: rgba(0,0,0,0.75);
+                z-index: 2147483647;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                color: #fff;
+                font-family: 'Google Sans', sans-serif;
+            }
+            .exporter-overlay-content {
+                text-align: center;
+            }
+            .exporter-spinner {
+                border: 4px solid rgba(255, 255, 255, 0.2);
+                border-top: 4px solid #fff;
+                border-radius: 50%;
+                width: 50px;
+                height: 50px;
+                animation: spin 1s linear infinite;
+                margin: 0 auto 20px auto;
+            }
+            .exporter-message {
+                font-size: 18px;
+                font-weight: 500;
+            }
+
+            @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
             }
         `;
         shadow.appendChild(styleElement);
@@ -1095,6 +1245,74 @@
         handleBulkDeleteLogic(); // Attach listeners after modal is created
     }
 
+    // --- NEW: CHAT EXPORT MODAL LOGIC ---
+    function showChatExportModal() {
+        // Check if modal already exists, remove if it does
+        let modal = shadow.querySelector('#chat-exporter-modal');
+        if (modal) modal.remove();
+
+        // Create modal structure
+        modal = document.createElement('div');
+        modal.id = 'chat-exporter-modal';
+        modal.className = 'gemini-modal-backdrop';
+        
+        modal.innerHTML = `
+            <div class="gemini-modal-content">
+                <div class="gemini-modal-header">
+                    <h2>Select a Chat to Export</h2>
+                    <button class="gemini-modal-close-btn">&times;</button>
+                </div>
+                <div class="gemini-modal-body">
+                    <div id="chat-exporter-list" class="gemini-modal-list">
+                        <div class="gemini-modal-loader">Loading chats...</div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        shadow.appendChild(modal);
+
+        // Populate chats
+        const chatListContainer = modal.querySelector('#chat-exporter-list');
+        const conversations = getAllConversationElements();
+        
+        if (conversations.length > 0) {
+            chatListContainer.innerHTML = ''; // Clear loader
+            conversations.forEach(chatEl => {
+                const chatId = getChatIdFromElement(chatEl);
+                // Find the title element - try multiple selectors
+                const titleElement = chatEl.querySelector('.conversation-title, .title-text, .mat-button-wrapper, [data-testid="conversation-title"]');
+                const titleText = titleElement?.textContent?.trim();
+
+                if (chatId && titleText) {
+                    const chatItem = document.createElement('div');
+                    chatItem.className = 'gemini-modal-list-item';
+                    chatItem.textContent = titleText;
+                    chatItem.dataset.chatId = chatId;
+                    chatListContainer.appendChild(chatItem);
+                }
+            });
+        } else {
+            chatListContainer.innerHTML = '<div class="gemini-modal-empty-state">No recent chats found.</div>';
+        }
+
+        // Add event listeners
+        modal.querySelector('.gemini-modal-close-btn').onclick = () => modal.remove();
+        modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+        
+        modal.querySelectorAll('.gemini-modal-list-item').forEach(item => {
+            item.onclick = () => {
+                const chatId = item.dataset.chatId;
+                const chatTitle = item.textContent;
+                modal.remove(); // Close this modal
+                // Hand off to the exporter instance
+                if (chatExporterInstance) {
+                    chatExporterInstance.showFormatSelection(chatId, chatTitle);
+                }
+            };
+        });
+    }
+
     // --- NEW: Core Bulk Deletion Logic ---
     async function deleteSingleConversation(conversationItem, abortSignal) {
         try {
@@ -1621,27 +1839,31 @@
     // --- EXPORT CHAT FUNCTIONALITY ---
     
     async function initializeExportChat() {
-        if (!exportChatInstance && window.ExportChat) {
+        if (!chatExporterInstance && window.ChatExporter) {
             try {
-                exportChatInstance = new window.ExportChat(shadow);
-                console.log('Export Chat initialized successfully');
-                exportChatInstance.showExportModal();
+                chatExporterInstance = new window.ChatExporter(shadow);
+                console.log('Chat Exporter initialized successfully');
+                showChatExportModal();
             } catch (error) {
-                console.error('Error initializing Export Chat:', error);
+                console.error('Error initializing Chat Exporter:', error);
             }
-        } else if (exportChatInstance) {
+        } else if (chatExporterInstance) {
             // If already initialized, just show the modal
-            exportChatInstance.showExportModal();
+            showChatExportModal();
         } else {
-            // If ExportChat class is not available, try to load it
-            console.log('ExportChat class not found, attempting to load...');
-            setTimeout(() => {
-                if (window.ExportChat) {
-                    initializeExportChat();
-                } else {
-                    console.error('ExportChat class not available');
+            // If ChatExporter class is not available, create it directly
+            console.log('ChatExporter class not found, creating from loaded script...');
+            if (typeof ChatExporter !== 'undefined') {
+                try {
+                    chatExporterInstance = new ChatExporter(shadow);
+                    console.log('Chat Exporter initialized successfully');
+                    showChatExportModal();
+                } catch (error) {
+                    console.error('Error initializing Chat Exporter:', error);
                 }
-            }, 100);
+            } else {
+                console.error('ChatExporter class not available');
+            }
         }
     }
 

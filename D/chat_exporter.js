@@ -59,16 +59,20 @@ class ChatExporter {
 
         try {
             // Wait for the conversation to be loaded on the new page
-            await this.waitForElement('message-content', document, 15000);
-            await this.delay(1000); // Extra delay for content rendering
+            await this.waitForElement('message-content', document, 20000);
+            await this.delay(2000); // Extra delay for content rendering
 
             this.updateOverlay("Loading full conversation...");
-            await this.scrollToTopAndWait();
+            await this.scrollToTopAndWait({
+                loadWaitTimeout: 3000,
+                maxTotalTime: 45000,
+                maxScrollAttempts: 150
+            });
 
             this.updateOverlay("Extracting content...");
             const conversation = this.extractConversationElements();
             if (!conversation || conversation.length === 0) {
-                throw new Error("No content could be extracted from the chat.");
+                throw new Error("No content could be extracted from the chat. The page may not have finished loading, or the chat format has changed.");
             }
 
             this.updateOverlay(`Generating ${format.toUpperCase()} file...`);
@@ -149,76 +153,232 @@ class ChatExporter {
     waitForElement(selector, parent = document, timeout = 7000) {
         return new Promise((resolve, reject) => {
             const element = parent.querySelector(selector);
-            if (element) return resolve(element);
+            if (element) {
+                console.log(`[Gemini Exporter] Element '${selector}' found immediately`);
+                return resolve(element);
+            }
+            
+            console.log(`[Gemini Exporter] Waiting for element '${selector}' (timeout: ${timeout}ms)`);
             const observer = new MutationObserver(() => {
                 const element = parent.querySelector(selector);
                 if (element) {
+                    console.log(`[Gemini Exporter] Element '${selector}' found after waiting`);
                     observer.disconnect();
                     resolve(element);
                 }
             });
-            observer.observe(document.body, { childList: true, subtree: true });
+            observer.observe(parent, { childList: true, subtree: true });
             setTimeout(() => {
                 observer.disconnect();
+                console.error(`[Gemini Exporter] Element '${selector}' not found within ${timeout}ms`);
                 reject(new Error(`Element "${selector}" not found after ${timeout}ms`));
             }, timeout);
         });
     }
 
     getScrollHost() {
-        const selectors = [
-            '#chat-history[data-test-id="chat-history-container"]',
-            'main .conversation-area div[style*="overflow: auto"]',
-            'main'
-        ];
-        for (const selector of selectors) {
-            const el = document.querySelector(selector);
-            if (el) return el;
+        let scrollHost = document.querySelector('#chat-history[data-test-id="chat-history-container"]');
+        if (scrollHost) {
+            console.log("[Gemini Exporter] Found scroll container by specific ID/data-test-id");
+            return scrollHost;
         }
+        
+        scrollHost = document.querySelector("infinite-scroller.chat-history");
+        if (scrollHost) {
+            console.log("[Gemini Exporter] Found scroll container by custom element name + class");
+            return scrollHost;
+        }
+        
+        scrollHost = document.querySelector(".chat-history-scroll-container");
+        if (scrollHost) {
+            console.log("[Gemini Exporter] Found scroll container by common class name");
+            return scrollHost;
+        }
+        
+        // Check within main conversation area
+        const mainArea = document.querySelector("main .conversation-area");
+        if (mainArea) {
+            const divs = mainArea.querySelectorAll("div");
+            for (const div of divs) {
+                const computedStyle = window.getComputedStyle(div);
+                if ((computedStyle.overflowY === 'auto' || computedStyle.overflowY === 'scroll') && 
+                    div.clientHeight > 300) {
+                    console.log("[Gemini Exporter] Found potential scroll container by computed style within main area");
+                    return div;
+                }
+            }
+        }
+        
+        scrollHost = document.querySelector("infinite-scroller");
+        if (scrollHost) {
+            console.warn("[Gemini Exporter] Found scroll container by 'infinite-scroller' tag name (fallback).");
+            return scrollHost;
+        }
+        
+        console.error("[Gemini Exporter] All specific scroll container selectors failed. Falling back to documentElement.");
         return document.documentElement;
     }
 
-    async scrollToTopAndWait(timeout = 20000) {
-        const scroller = this.getScrollHost();
-        const isWindow = scroller === document.documentElement;
-        let lastHeight = -1;
-        let attempts = 0;
-        const startTime = Date.now();
+    async scrollToTopAndWait(options = {}) {
+        const {
+            loadWaitTimeout = 2000,
+            maxTotalTime = 30000,
+            maxScrollAttempts = 100
+        } = options;
 
-        while (Date.now() - startTime < timeout) {
-            const currentHeight = isWindow ? document.body.scrollHeight : scroller.scrollHeight;
-            if (currentHeight === lastHeight) {
-                attempts++;
-            } else {
-                attempts = 0;
+        console.log("[Gemini Exporter] Starting robust scroll to top...");
+        return new Promise(async (resolve, reject) => {
+            let scroller;
+            try {
+                scroller = this.getScrollHost();
+                if (!scroller) {
+                    throw new Error("Scroll container returned null.");
+                }
+                
+                const scrollContent = scroller === document.documentElement ? document.body : scroller;
+                if (scrollContent.scrollHeight <= scrollContent.clientHeight) {
+                    console.log("[Gemini Exporter] Scroller content doesn't exceed its height. No scrolling needed.");
+                    return resolve();
+                }
+            } catch (error) {
+                console.error(`[Gemini Exporter] Error finding scroll container: ${error.message}`);
+                return reject(new Error("Scroll container lookup failed. Cannot scroll."));
             }
 
-            if (attempts >= 5) { // If height hasn't changed for 5 checks, assume we're done
-                console.log("Scrolling complete, height stabilized.");
-                return;
+            const startTime = Date.now();
+            let scrollAttempts = 0;
+            const conversationSelector = 'div.conversation-container';
+            const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+            const scrollTarget = scroller === document.documentElement ? window : scroller;
+
+            while (scrollAttempts < maxScrollAttempts) {
+                if (Date.now() - startTime > maxTotalTime) {
+                    console.warn(`[Gemini Exporter] Scroll timeout reached after ${maxTotalTime}ms.`);
+                    return reject(new Error(`Scroll process timed out after ${maxTotalTime}ms.`));
+                }
+
+                const messagesBeforeScroll = scroller.querySelectorAll(conversationSelector).length;
+                const scrollTopBefore = scrollTarget === window ? window.scrollY : scrollTarget.scrollTop;
+                
+                console.log(`[Gemini Exporter] Scroll attempt ${scrollAttempts + 1}: Current messages: ${messagesBeforeScroll}, ScrollTop: ${scrollTopBefore}`);
+
+                if (scrollTopBefore === 0 && scrollAttempts > 0) {
+                    console.log("[Gemini Exporter] Reached scrollTop 0. Checking for final loads...");
+                    await delay(loadWaitTimeout);
+                    const messagesAfterWait = scroller.querySelectorAll(conversationSelector).length;
+                    if (messagesAfterWait === messagesBeforeScroll) {
+                        console.log("[Gemini Exporter] ScrollTop is 0 and no new messages loaded after wait. Scrolling complete.");
+                        return resolve();
+                    }
+                    console.log(`[Gemini Exporter] Messages loaded after reaching top (${messagesBeforeScroll} -> ${messagesAfterWait}). Continuing check.`);
+                }
+
+                // Scroll to top
+                if (scrollTarget === window) {
+                    window.scrollTo(0, 0);
+                } else {
+                    scrollTarget.scrollTop = 0;
+                    scrollTarget.dispatchEvent(new Event('scroll'));
+                }
+                console.log("[Gemini Exporter] Scrolled to top (scrollTop set to 0).");
+
+                // Wait for new messages to load
+                let messagesLoaded = false;
+                const waitStartTime = Date.now();
+                while (Date.now() - waitStartTime < loadWaitTimeout) {
+                    const messagesAfterScroll = scroller.querySelectorAll(conversationSelector).length;
+                    if (messagesAfterScroll > messagesBeforeScroll) {
+                        console.log(`[Gemini Exporter] New messages loaded (${messagesBeforeScroll} -> ${messagesAfterScroll}).`);
+                        messagesLoaded = true;
+                        break;
+                    }
+                    
+                    const currentScrollTop = scrollTarget === window ? window.scrollY : scrollTarget.scrollTop;
+                    if (currentScrollTop > 5 && scrollTopBefore === 0) {
+                        console.warn(`[Gemini Exporter] Scroll position changed unexpectedly after scroll attempt (${currentScrollTop}).`);
+                    }
+                    
+                    await delay(100);
+                }
+
+                if (!messagesLoaded) {
+                    const finalScrollTop = scrollTarget === window ? window.scrollY : scrollTarget.scrollTop;
+                    if (finalScrollTop === 0) {
+                        console.log("[Gemini Exporter] Scrolled, waited, no new messages loaded, and still at scrollTop 0. Assuming end of history.");
+                        return resolve();
+                    }
+                    console.warn(`[Gemini Exporter] Scrolled, waited, no new messages, but scrollTop is now ${finalScrollTop}. Continuing loop cautiously.`);
+                }
+
+                scrollAttempts++;
+                await delay(50);
             }
-            
-            lastHeight = currentHeight;
-            (isWindow ? window : scroller).scrollTo(0, 0);
-            await this.delay(200); // Wait for content to potentially load
-        }
-        console.warn("Scroll to top timed out.");
+
+            console.warn(`[Gemini Exporter] Reached max scroll attempts (${maxScrollAttempts}). Finishing scroll process.`);
+            resolve();
+        });
     }
 
     extractConversationElements() {
         const conversationPairs = [];
-        const messageContainers = document.querySelectorAll('div.conversation-container');
-        messageContainers.forEach(container => {
-            const userQueryEl = container.querySelector('user-query');
+        let scroller;
+        
+        try {
+            scroller = this.getScrollHost();
+            if (!scroller) {
+                throw new Error("Scroller element not found.");
+            }
+        } catch (error) {
+            console.error("[Gemini Exporter] Could not find chat history scroller for extraction:", error);
+            return conversationPairs;
+        }
+
+        const conversationContainers = scroller.querySelectorAll('div.conversation-container');
+        console.log(`[Gemini Exporter] Found ${conversationContainers.length} conversation containers within scroller.`);
+
+        conversationContainers.forEach(container => {
+            const userQueryEl = container.querySelector('user-query, user-query-content');
             const modelResponseEl = container.querySelector('message-content');
 
-            const questionHTML = userQueryEl?.querySelector('.query-text-line')?.innerHTML.trim() || null;
-            const answerHTML = modelResponseEl?.querySelector('.markdown-main-panel, .output-content .markdown')?.innerHTML.trim() || null;
+            let questionHTML = '';
+            // Try to get user query text
+            const queryTextLine = userQueryEl?.querySelector('.query-text-line');
+            if (queryTextLine) {
+                questionHTML = queryTextLine.innerHTML.trim();
+            } else if (userQueryEl) {
+                const clonedUserEl = userQueryEl.cloneNode(true);
+                clonedUserEl.querySelectorAll('mat-icon, .icon-button').forEach(el => el.remove());
+                questionHTML = clonedUserEl.innerHTML.trim();
+            }
+
+            let answerHTML = '';
+            // Try to get model response
+            const responseContent = modelResponseEl?.querySelector('.markdown-main-panel, .output-content .markdown, .output-content');
+            if (responseContent) {
+                answerHTML = responseContent.innerHTML.trim();
+            } else if (modelResponseEl) {
+                const clonedResponseEl = modelResponseEl.cloneNode(true);
+                clonedResponseEl.querySelectorAll('message-actions, mat-icon-button, .icon-button, response-actions').forEach(el => el.remove());
+                answerHTML = clonedResponseEl.innerHTML.trim();
+            }
 
             if (questionHTML || answerHTML) {
-                conversationPairs.push({ question: questionHTML, answer: answerHTML });
+                // Clean up any checkbox containers that might be present
+                const tempQuestionDiv = document.createElement('div');
+                tempQuestionDiv.innerHTML = questionHTML;
+                tempQuestionDiv.querySelectorAll('.gemini-export-checkbox-container').forEach(el => el.remove());
+                
+                const tempAnswerDiv = document.createElement('div');
+                tempAnswerDiv.innerHTML = answerHTML;
+                tempAnswerDiv.querySelectorAll('.gemini-export-checkbox-container').forEach(el => el.remove());
+                
+                conversationPairs.push({ 
+                    question: tempQuestionDiv.innerHTML || null, 
+                    answer: tempAnswerDiv.innerHTML || null 
+                });
             }
         });
+
         return conversationPairs;
     }
     

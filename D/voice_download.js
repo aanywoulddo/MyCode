@@ -1,6 +1,6 @@
-// Voice Download Feature for Gemini Toolbox
-// Inspired by ChatGPT Toolbox capabilities
-
+// ================================================================
+// VOICE_DOWNLOAD.JS - Fixed Voice Download Feature
+// ================================================================
 class VoiceDownload {
     constructor(shadowRoot) {
         this.shadowRoot = shadowRoot;
@@ -14,28 +14,34 @@ class VoiceDownload {
             pitch: 1.0,
             volume: 1.0
         };
-        
+        this.voiceButtonsAdded = new WeakSet();
         this.init();
     }
 
     async init() {
         if (this.isInitialized) return;
-        
+
+        console.log('Initializing Voice Download feature...');
+
         // Load settings from storage
         await this.loadSettings();
-        
+
         // Initialize voices
         this.loadVoices();
-        
+
         // Set up voice change listener
         if (speechSynthesis.onvoiceschanged !== undefined) {
             speechSynthesis.onvoiceschanged = () => this.loadVoices();
         }
-        
+
         // Start monitoring for new AI responses
         this.startResponseMonitoring();
-        
+
+        // Check for existing responses
+        this.checkExistingResponses();
+
         this.isInitialized = true;
+        console.log('Voice Download feature initialized');
     }
 
     loadVoices() {
@@ -83,37 +89,70 @@ class VoiceDownload {
         });
     }
 
+    checkExistingResponses() {
+        // Check all existing responses on the page
+        const responseSelectors = [
+            'message-content.model-response-text',
+            '.model-response-text',
+            '.markdown.markdown-main-panel',
+            'model-response',
+            '[data-message-author-role="assistant"]',
+            '.conversation-turn.assistant',
+            '.response-content'
+        ];
+
+        responseSelectors.forEach(selector => {
+            const responses = document.querySelectorAll(selector);
+            responses.forEach(response => {
+                if (!this.voiceButtonsAdded.has(response)) {
+                    this.addVoiceButtonToResponse(response);
+                }
+            });
+        });
+    }
+
     checkForNewResponses(element) {
         // Look for Gemini AI response containers
         const responseSelectors = [
-            '[data-response-index]',
+            'message-content.model-response-text',
             '.model-response-text',
-            '.response-content',
-            '[role="presentation"] .markdown',
-            '.conversation-turn',
-            'model-response'
+            '.markdown.markdown-main-panel',
+            'model-response',
+            '[data-message-author-role="assistant"]',
+            '.conversation-turn.assistant'
         ];
 
         responseSelectors.forEach(selector => {
             const responses = element.querySelectorAll ? element.querySelectorAll(selector) : [];
-            responses.forEach(response => this.addVoiceButtonToResponse(response));
-            
+            responses.forEach(response => {
+                if (!this.voiceButtonsAdded.has(response)) {
+                    this.addVoiceButtonToResponse(response);
+                }
+            });
+
             // Also check if the element itself matches
             if (element.matches && element.matches(selector)) {
-                this.addVoiceButtonToResponse(element);
+                if (!this.voiceButtonsAdded.has(element)) {
+                    this.addVoiceButtonToResponse(element);
+                }
             }
         });
     }
 
     addVoiceButtonToResponse(responseElement) {
         // Skip if button already exists
-        if (responseElement.querySelector('.voice-download-btn')) return;
-        
+        if (this.voiceButtonsAdded.has(responseElement)) return;
+
+        // Mark as processed
+        this.voiceButtonsAdded.add(responseElement);
+
         // Skip if this doesn't look like an AI response
         if (!this.isAIResponse(responseElement)) return;
 
+        console.log('Adding voice button to response:', responseElement);
+
         const voiceButton = this.createVoiceButton(responseElement);
-        
+
         // Try to find a good place to insert the button
         const insertionPoint = this.findInsertionPoint(responseElement);
         if (insertionPoint) {
@@ -124,424 +163,281 @@ class VoiceDownload {
     isAIResponse(element) {
         // Check various indicators that this is an AI response
         const text = element.textContent || '';
-        
+
         // Skip very short responses
         if (text.trim().length < 10) return false;
-        
-        // Skip user messages (usually have different styling/position)
-        if (element.closest('[data-is-user-message="true"]')) return false;
+
+        // Skip user messages
+        if (element.closest('[data-message-author-role="user"]')) return false;
         if (element.closest('.user-message')) return false;
-        
+        if (element.closest('.human-message')) return false;
+
         // Look for AI response indicators
         const aiIndicators = [
             'model-response',
             'assistant-message',
             'bot-message',
-            'ai-response'
+            'ai-response',
+            'model-response-text'
         ];
-        
-        return aiIndicators.some(indicator => 
-            element.classList.contains(indicator) || 
+
+        const hasAIIndicator = aiIndicators.some(indicator =>
+            element.classList.contains(indicator) ||
             element.closest(`.${indicator}`) ||
             element.hasAttribute('data-' + indicator.replace('-', '_'))
         );
+
+        // For Gemini specifically, check for model response text
+        const isGeminiResponse = element.classList.contains('model-response-text') ||
+                                element.closest('.model-response-text') ||
+                                element.querySelector('.markdown.markdown-main-panel');
+
+        return hasAIIndicator || isGeminiResponse;
     }
 
     findInsertionPoint(responseElement) {
-        // Look for existing action buttons container
-        let actionContainer = responseElement.querySelector('.response-actions, .message-actions, .action-buttons');
-        
-        if (!actionContainer) {
+        // For Gemini, try to find the bottom of the response area
+        let insertionPoint = null;
+
+        // Try to find existing action area
+        const possibleContainers = [
+            responseElement.querySelector('.response-footer'),
+            responseElement.querySelector('.message-actions'),
+            responseElement.querySelector('.response-actions'),
+            responseElement.parentElement?.querySelector('.response-footer')
+        ];
+
+        for (const container of possibleContainers) {
+            if (container) {
+                insertionPoint = container;
+                break;
+            }
+        }
+
+        if (!insertionPoint) {
             // Create our own action container
-            actionContainer = document.createElement('div');
-            actionContainer.className = 'voice-download-actions';
-            actionContainer.style.cssText = `
+            insertionPoint = document.createElement('div');
+            insertionPoint.className = 'voice-download-actions';
+            insertionPoint.style.cssText = `
                 display: flex;
                 gap: 8px;
-                margin-top: 8px;
+                margin-top: 12px;
                 align-items: center;
-                font-size: 14px;
+                padding: 8px 0;
+                border-top: 1px solid var(--gf-border-color, #e0e0e0);
             `;
-            
-            // Try to append to the end of the response
-            responseElement.appendChild(actionContainer);
+
+            // For Gemini, append to the parent of the markdown content if it exists
+            const markdownContent = responseElement.querySelector('.markdown.markdown-main-panel');
+            if (markdownContent && markdownContent.parentElement) {
+                markdownContent.parentElement.appendChild(insertionPoint);
+            } else {
+                responseElement.appendChild(insertionPoint);
+            }
         }
-        
-        return actionContainer;
+
+        return insertionPoint;
     }
 
     createVoiceButton(responseElement) {
         const button = document.createElement('button');
         button.className = 'voice-download-btn';
         button.innerHTML = `
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" stroke="currentColor" stroke-width="2"/>
-                <path d="M19 10v2a7 7 0 0 1-14 0v-2" stroke="currentColor" stroke-width="2"/>
-                <line x1="12" y1="19" x2="12" y2="23" stroke="currentColor" stroke-width="2"/>
-                <line x1="8" y1="23" x2="16" y2="23" stroke="currentColor" stroke-width="2"/>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 2C11.4477 2 11 2.44772 11 3V11C11 11.5523 11.4477 12 12 12C12.5523 12 13 11.5523 13 11V3C13 2.44772 12.5523 2 12 2Z" fill="currentColor"/>
+                <path d="M8 6C7.44772 6 7 6.44772 7 7V11C7 11.5523 7.44772 12 8 12C8.55228 12 9 11.5523 9 11V7C9 6.44772 8.55228 6 8 6Z" fill="currentColor"/>
+                <path d="M16 6C15.4477 6 15 6.44772 15 7V11C15 11.5523 15.4477 12 16 12C16.5523 12 17 11.5523 17 11V7C17 6.44772 16.5523 6 16 6Z" fill="currentColor"/>
+                <path d="M4 9C3.44772 9 3 9.44772 3 10V11C3 11.5523 3.44772 12 4 12C4.55228 12 5 11.5523 5 11V10C5 9.44772 4.55228 9 4 9Z" fill="currentColor"/>
+                <path d="M20 9C19.4477 9 19 9.44772 19 10V11C19 11.5523 19.4477 12 20 12C20.5523 12 21 11.5523 21 11V10C21 9.44772 20.5523 9 20 9Z" fill="currentColor"/>
+                <rect x="6" y="14" width="12" height="8" rx="2" fill="currentColor"/>
             </svg>
-            <span>Voice</span>
+            <span>Listen</span>
         `;
-        
+
+        // Detect theme and apply appropriate styles
+        const isDarkTheme = document.body.classList.contains('dark-theme') || 
+                           document.body.classList.contains('dark_mode_toggled');
+
         button.style.cssText = `
-            display: flex;
+            display: inline-flex;
             align-items: center;
-            gap: 4px;
+            gap: 6px;
             padding: 6px 12px;
-            border: 1px solid var(--border-color, #e0e0e0);
-            border-radius: 18px;
-            background: var(--surface-color, #fff);
-            color: var(--text-color, #333);
-            font-size: 13px;
+            border: 1px solid ${isDarkTheme ? '#5f6368' : '#dadce0'};
+            border-radius: 20px;
+            background: transparent;
+            color: ${isDarkTheme ? '#8ab4f8' : '#1a73e8'};
+            font-size: 14px;
             cursor: pointer;
             transition: all 0.2s ease;
-            font-family: inherit;
+            font-family: 'Google Sans', Roboto, sans-serif;
             white-space: nowrap;
+            margin-right: 8px;
         `;
-        
+
         // Add hover effects
         button.addEventListener('mouseenter', () => {
-            button.style.backgroundColor = 'var(--hover-color, #f5f5f5)';
-            button.style.borderColor = 'var(--accent-color, #1976d2)';
+            button.style.backgroundColor = isDarkTheme ? 'rgba(138, 180, 248, 0.08)' : 'rgba(26, 115, 232, 0.08)';
+            button.style.borderColor = isDarkTheme ? '#8ab4f8' : '#1a73e8';
         });
-        
+
         button.addEventListener('mouseleave', () => {
-            button.style.backgroundColor = 'var(--surface-color, #fff)';
-            button.style.borderColor = 'var(--border-color, #e0e0e0)';
+            button.style.backgroundColor = 'transparent';
+            button.style.borderColor = isDarkTheme ? '#5f6368' : '#dadce0';
         });
-        
+
         // Add click handler
         button.addEventListener('click', (e) => {
             e.stopPropagation();
             this.handleVoiceButtonClick(responseElement, button);
         });
-        
+
         return button;
     }
 
     handleVoiceButtonClick(responseElement, button) {
-        // Show voice options dropdown
-        this.showVoiceOptions(responseElement, button);
-    }
-
-    showVoiceOptions(responseElement, button) {
-        // Remove any existing dropdown
-        const existingDropdown = document.querySelector('.voice-options-dropdown');
-        if (existingDropdown) {
-            existingDropdown.remove();
-        }
-
-        const dropdown = document.createElement('div');
-        dropdown.className = 'voice-options-dropdown';
-        dropdown.innerHTML = `
-            <div class="voice-option" data-action="play">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                    <polygon points="5,3 19,12 5,21" fill="currentColor"/>
-                </svg>
-                <span>Play Audio</span>
-            </div>
-            <div class="voice-option" data-action="download">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="currentColor" stroke-width="2"/>
-                    <polyline points="7,10 12,15 17,10" stroke="currentColor" stroke-width="2"/>
-                    <line x1="12" y1="15" x2="12" y2="3" stroke="currentColor" stroke-width="2"/>
-                </svg>
-                <span>Download MP3</span>
-            </div>
-            <div class="voice-option" data-action="settings">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                    <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/>
-                    <path d="M12 1v6m0 6v6m11-5l-6-3.5 6-3.5M1 12l6 3.5L1 15.5" stroke="currentColor" stroke-width="2"/>
-                </svg>
-                <span>Voice Settings</span>
-            </div>
-        `;
-        
-        dropdown.style.cssText = `
-            position: absolute;
-            top: 100%;
-            left: 0;
-            background: var(--surface-color, #fff);
-            border: 1px solid var(--border-color, #e0e0e0);
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-            z-index: 1000;
-            min-width: 150px;
-            margin-top: 4px;
-        `;
-        
-        // Position relative to button
-        button.style.position = 'relative';
-        button.appendChild(dropdown);
-        
-        // Add click handlers for options
-        dropdown.querySelectorAll('.voice-option').forEach(option => {
-            option.style.cssText = `
-                display: flex;
-                align-items: center;
-                gap: 8px;
-                padding: 8px 12px;
-                cursor: pointer;
-                transition: background-color 0.2s ease;
-                font-size: 13px;
-                color: var(--text-color, #333);
-            `;
-            
-            option.addEventListener('mouseenter', () => {
-                option.style.backgroundColor = 'var(--hover-color, #f5f5f5)';
-            });
-            
-            option.addEventListener('mouseleave', () => {
-                option.style.backgroundColor = 'transparent';
-            });
-            
-            option.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const action = option.dataset.action;
-                this.handleVoiceAction(action, responseElement, button);
-                dropdown.remove();
-            });
-        });
-        
-        // Close dropdown on outside click
-        setTimeout(() => {
-            document.addEventListener('click', function closeDropdown() {
-                dropdown.remove();
-                document.removeEventListener('click', closeDropdown);
-            });
-        }, 0);
-    }
-
-    handleVoiceAction(action, responseElement, button) {
         const text = this.extractTextFromResponse(responseElement);
-        
-        switch (action) {
-            case 'play':
-                this.playText(text, button);
-                break;
-            case 'download':
-                this.downloadAudio(text, responseElement);
-                break;
-            case 'settings':
-                this.showVoiceSettings();
-                break;
+        if (!text) {
+            alert('Could not extract text from this response.');
+            return;
         }
+
+        // If already playing, stop
+        if (this.isPlaying && button.classList.contains('playing')) {
+            this.stopSpeaking();
+            return;
+        }
+
+        // Stop any other playing audio
+        if (this.isPlaying) {
+            this.stopSpeaking();
+        }
+
+        // Start playing this text
+        this.playText(text, button);
     }
 
     extractTextFromResponse(responseElement) {
-        // Get clean text content, removing any UI elements
-        let text = responseElement.textContent || '';
+        // Clone the element to avoid modifying the live DOM
+        const clone = responseElement.cloneNode(true);
         
-        // Remove common UI text that shouldn't be read
-        const uiTexts = [
-            'Copy code',
-            'Copied!',
-            'Show more',
-            'Show less',
-            'Voice',
-            'Download',
-            'Settings'
+        // Remove known non-content elements
+        const selectorsToRemove = [
+            'button', 
+            '.response-actions', 
+            '.message-actions', 
+            '.action-buttons',
+            '.voice-download-btn',
+            '.voice-download-actions',
+            '.code-block-header',
+            'pre', // Remove code blocks
+            'code',
+            '.copy-code-button'
         ];
         
-        uiTexts.forEach(uiText => {
-            text = text.replace(new RegExp(uiText, 'gi'), '');
+        selectorsToRemove.forEach(selector => {
+            clone.querySelectorAll(selector).forEach(el => el.remove());
         });
         
-        return text.trim();
+        // For Gemini, prefer markdown content
+        const markdownContent = clone.querySelector('.markdown.markdown-main-panel');
+        if (markdownContent) {
+            return markdownContent.innerText || markdownContent.textContent || '';
+        }
+        
+        // Fallback to full content
+        return clone.innerText || clone.textContent || '';
     }
 
     playText(text, button) {
-        // Stop any currently playing audio
-        if (this.currentAudio) {
-            speechSynthesis.cancel();
-            this.currentAudio = null;
-            this.isPlaying = false;
-        }
-        
-        if (!text || text.length === 0) {
-            alert('No text found to convert to speech');
-            return;
-        }
-        
-        // Create speech synthesis utterance
+        if (!text) return;
+
         const utterance = new SpeechSynthesisUtterance(text);
         
         // Apply settings
-        if (this.voices.length > 0 && this.settings.selectedVoice < this.voices.length) {
-            utterance.voice = this.voices[this.settings.selectedVoice];
+        if (this.voices.length > 0) {
+            utterance.voice = this.voices[this.settings.selectedVoice] || this.voices[0];
         }
         utterance.rate = this.settings.rate;
         utterance.pitch = this.settings.pitch;
         utterance.volume = this.settings.volume;
         
         // Update button state
-        const originalHTML = button.innerHTML;
+        button.classList.add('playing');
         button.innerHTML = `
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                <rect x="6" y="4" width="4" height="16" fill="currentColor"/>
-                <rect x="14" y="4" width="4" height="16" fill="currentColor"/>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="6" y="4" width="4" height="16" rx="1" fill="currentColor"/>
+                <rect x="14" y="4" width="4" height="16" rx="1" fill="currentColor"/>
             </svg>
             <span>Stop</span>
         `;
         
+        utterance.onstart = () => {
+            this.isPlaying = true;
+            this.currentButton = button;
+        };
+
         utterance.onend = () => {
-            button.innerHTML = originalHTML;
-            this.currentAudio = null;
+            this.resetButton(button);
             this.isPlaying = false;
+            this.currentButton = null;
+        };
+
+        utterance.onerror = (e) => {
+            console.error('Speech synthesis error:', e);
+            this.resetButton(button);
+            this.isPlaying = false;
+            this.currentButton = null;
         };
         
-        utterance.onerror = () => {
-            button.innerHTML = originalHTML;
-            this.currentAudio = null;
-            this.isPlaying = false;
-            alert('Error playing audio');
-        };
-        
-        // Add stop functionality to button
-        const stopHandler = (e) => {
-            e.stopPropagation();
-            speechSynthesis.cancel();
-            button.innerHTML = originalHTML;
-            button.removeEventListener('click', stopHandler);
-            this.currentAudio = null;
-            this.isPlaying = false;
-        };
-        
-        button.addEventListener('click', stopHandler);
-        
-        this.currentAudio = utterance;
-        this.isPlaying = true;
         speechSynthesis.speak(utterance);
     }
 
-    async downloadAudio(text, responseElement) {
-        if (!text || text.length === 0) {
-            alert('No text found to convert to audio');
+    stopSpeaking() {
+        speechSynthesis.cancel();
+        if (this.currentButton) {
+            this.resetButton(this.currentButton);
+        }
+        this.isPlaying = false;
+        this.currentButton = null;
+    }
+
+    resetButton(button) {
+        button.classList.remove('playing');
+        button.innerHTML = `
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 2C11.4477 2 11 2.44772 11 3V11C11 11.5523 11.4477 12 12 12C12.5523 12 13 11.5523 13 11V3C13 2.44772 12.5523 2 12 2Z" fill="currentColor"/>
+                <path d="M8 6C7.44772 6 7 6.44772 7 7V11C7 11.5523 7.44772 12 8 12C8.55228 12 9 11.5523 9 11V7C9 6.44772 8.55228 6 8 6Z" fill="currentColor"/>
+                <path d="M16 6C15.4477 6 15 6.44772 15 7V11C15 11.5523 15.4477 12 16 12C16.5523 12 17 11.5523 17 11V7C17 6.44772 16.5523 6 16 6Z" fill="currentColor"/>
+                <path d="M4 9C3.44772 9 3 9.44772 3 10V11C3 11.5523 3.44772 12 4 12C4.55228 12 5 11.5523 5 11V10C5 9.44772 4.55228 9 4 9Z" fill="currentColor"/>
+                <path d="M20 9C19.4477 9 19 9.44772 19 10V11C19 11.5523 19.4477 12 20 12C20.5523 12 21 11.5523 21 11V10C21 9.44772 20.5523 9 20 9Z" fill="currentColor"/>
+                <rect x="6" y="14" width="12" height="8" rx="2" fill="currentColor"/>
+            </svg>
+            <span>Listen</span>
+        `;
+    }
+
+    // Voice settings modal
+    showVoiceSettings() {
+        // Check if modal already exists
+        const existingModal = this.shadowRoot.getElementById('voice-settings-modal');
+        if (existingModal) {
+            existingModal.style.display = 'block';
             return;
         }
 
-        try {
-            // Create a blob URL for the audio
-            const audioBlob = await this.textToAudioBlob(text);
-            
-            // Generate filename
-            const title = this.generateFilename(text, responseElement);
-            const filename = `gemini_voice_${title}.wav`;
-            
-            // Create download link
-            const url = URL.createObjectURL(audioBlob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = filename;
-            a.style.display = 'none';
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-            
-        } catch (error) {
-            console.error('Error generating audio download:', error);
-            alert('Error generating audio file. Your browser might not support this feature.');
-        }
-    }
-
-    async textToAudioBlob(text) {
-        return new Promise((resolve, reject) => {
-            const utterance = new SpeechSynthesisUtterance(text);
-            
-            // Apply settings
-            if (this.voices.length > 0 && this.settings.selectedVoice < this.voices.length) {
-                utterance.voice = this.voices[this.settings.selectedVoice];
-            }
-            utterance.rate = this.settings.rate;
-            utterance.pitch = this.settings.pitch;
-            utterance.volume = this.settings.volume;
-            
-            // Note: This is a simplified implementation
-            // Modern browsers don't provide direct access to the audio data from speechSynthesis
-            // This creates a basic audio file using MediaRecorder if available
-            
-            if (!window.MediaRecorder) {
-                reject(new Error('MediaRecorder not supported'));
-                return;
-            }
-            
-            // Create an audio context for recording
-            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            const destination = audioContext.createMediaStreamDestination();
-            const mediaRecorder = new MediaRecorder(destination.stream);
-            const chunks = [];
-            
-            mediaRecorder.ondataavailable = (event) => {
-                chunks.push(event.data);
-            };
-            
-            mediaRecorder.onstop = () => {
-                const blob = new Blob(chunks, { type: 'audio/wav' });
-                resolve(blob);
-            };
-            
-            utterance.onstart = () => {
-                mediaRecorder.start();
-            };
-            
-            utterance.onend = () => {
-                setTimeout(() => mediaRecorder.stop(), 100);
-            };
-            
-            utterance.onerror = () => {
-                reject(new Error('Speech synthesis error'));
-            };
-            
-            speechSynthesis.speak(utterance);
-        });
-    }
-
-    generateFilename(text, responseElement) {
-        // Try to get conversation title or generate from text
-        const conversationTitle = document.querySelector('.conversation-title, [data-conversation-title]');
-        if (conversationTitle) {
-            return this.sanitizeFilename(conversationTitle.textContent.slice(0, 30));
-        }
-        
-        // Generate from first few words of the response
-        const words = text.split(' ').slice(0, 5).join('_');
-        return this.sanitizeFilename(words);
-    }
-
-    sanitizeFilename(filename) {
-        return filename
-            .replace(/[^a-z0-9]/gi, '_')
-            .replace(/_+/g, '_')
-            .replace(/^_|_$/g, '')
-            .toLowerCase();
-    }
-
-    showVoiceSettings() {
-        // Remove any existing settings modal
-        const existingModal = document.querySelector('.voice-settings-modal');
-        if (existingModal) {
-            existingModal.remove();
-        }
-
-        const modal = this.createSettingsModal();
-        document.body.appendChild(modal);
-    }
-
-    createSettingsModal() {
-        const modal = document.createElement('div');
-        modal.className = 'voice-settings-modal';
-        modal.innerHTML = `
-            <div class="voice-settings-backdrop">
-                <div class="voice-settings-content">
-                    <div class="voice-settings-header">
-                        <h3>Voice Settings</h3>
-                        <button class="voice-settings-close" type="button">×</button>
+        // Create modal HTML
+        const modalHTML = `
+            <div id="voice-settings-modal" class="modal">
+                <div class="modal-content" style="width: 500px;">
+                    <div class="modal-header">
+                        <h2>Voice Settings</h2>
+                        <button class="icon-btn close-button" id="close-voice-settings">×</button>
                     </div>
-                    <div class="voice-settings-body">
-                        <div class="voice-setting-group">
+                    <div class="modal-body">
+                        <div class="settings-group">
                             <label for="voice-select">Voice:</label>
-                            <select id="voice-select" class="voice-control">
+                            <select id="voice-select" class="settings-select">
                                 ${this.voices.map((voice, index) => 
                                     `<option value="${index}" ${index === this.settings.selectedVoice ? 'selected' : ''}>
                                         ${voice.name} (${voice.lang})
@@ -549,223 +445,155 @@ class VoiceDownload {
                                 ).join('')}
                             </select>
                         </div>
-                        <div class="voice-setting-group">
+                        
+                        <div class="settings-group">
                             <label for="rate-slider">Speed: <span id="rate-value">${this.settings.rate}</span></label>
-                            <input type="range" id="rate-slider" class="voice-control" min="0.5" max="2" step="0.1" value="${this.settings.rate}">
+                            <input type="range" id="rate-slider" min="0.5" max="2" step="0.1" value="${this.settings.rate}">
                         </div>
-                        <div class="voice-setting-group">
+                        
+                        <div class="settings-group">
                             <label for="pitch-slider">Pitch: <span id="pitch-value">${this.settings.pitch}</span></label>
-                            <input type="range" id="pitch-slider" class="voice-control" min="0.5" max="2" step="0.1" value="${this.settings.pitch}">
+                            <input type="range" id="pitch-slider" min="0.5" max="2" step="0.1" value="${this.settings.pitch}">
                         </div>
-                        <div class="voice-setting-group">
+                        
+                        <div class="settings-group">
                             <label for="volume-slider">Volume: <span id="volume-value">${this.settings.volume}</span></label>
-                            <input type="range" id="volume-slider" class="voice-control" min="0" max="1" step="0.1" value="${this.settings.volume}">
+                            <input type="range" id="volume-slider" min="0" max="1" step="0.1" value="${this.settings.volume}">
                         </div>
-                        <div class="voice-setting-group">
-                            <button id="test-voice" class="voice-test-btn" type="button">Test Voice</button>
+                        
+                        <div class="settings-actions">
+                            <button class="button primary" id="test-voice-btn">Test Voice</button>
+                            <button class="button secondary" id="reset-voice-btn">Reset Defaults</button>
                         </div>
-                    </div>
-                    <div class="voice-settings-footer">
-                        <button id="save-voice-settings" class="voice-save-btn" type="button">Save Settings</button>
                     </div>
                 </div>
             </div>
         `;
-        
-        this.addSettingsModalStyles(modal);
-        this.addSettingsModalHandlers(modal);
-        
-        return modal;
+
+        // Add modal to shadow DOM
+        const modalContainer = document.createElement('div');
+        modalContainer.innerHTML = modalHTML;
+        this.shadowRoot.appendChild(modalContainer.firstElementChild);
+
+        // Add styles
+        this.addSettingsStyles();
+
+        // Add event listeners
+        this.addSettingsEventListeners();
     }
 
-    addSettingsModalStyles(modal) {
-        const style = document.createElement('style');
-        style.textContent = `
-            .voice-settings-modal {
-                position: fixed;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                z-index: 10000;
-            }
-            .voice-settings-backdrop {
-                position: absolute;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                background: rgba(0, 0, 0, 0.5);
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            }
-            .voice-settings-content {
-                background: var(--surface-color, #fff);
-                border-radius: 12px;
-                width: 90%;
-                max-width: 500px;
-                max-height: 80vh;
-                overflow-y: auto;
-                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-            }
-            .voice-settings-header {
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                padding: 20px;
-                border-bottom: 1px solid var(--border-color, #e0e0e0);
-            }
-            .voice-settings-header h3 {
-                margin: 0;
-                color: var(--text-color, #333);
-                font-size: 18px;
-            }
-            .voice-settings-close {
-                background: none;
-                border: none;
-                font-size: 24px;
-                cursor: pointer;
-                color: var(--text-color, #666);
-                padding: 0;
-                width: 30px;
-                height: 30px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            }
-            .voice-settings-body {
-                padding: 20px;
-            }
-            .voice-setting-group {
+    addSettingsStyles() {
+        const styles = document.createElement('style');
+        styles.textContent = `
+            .settings-group {
                 margin-bottom: 20px;
             }
-            .voice-setting-group label {
+            
+            .settings-group label {
                 display: block;
                 margin-bottom: 8px;
                 font-weight: 500;
-                color: var(--text-color, #333);
-                font-size: 14px;
+                color: var(--gf-text-primary);
             }
-            .voice-control {
+            
+            .settings-select {
                 width: 100%;
                 padding: 8px 12px;
-                border: 1px solid var(--border-color, #ddd);
+                border: 1px solid var(--gf-border-color);
                 border-radius: 6px;
+                background: var(--gf-bg-input);
+                color: var(--gf-text-primary);
                 font-size: 14px;
-                background: var(--surface-color, #fff);
-                color: var(--text-color, #333);
             }
-            .voice-test-btn {
-                background: var(--accent-color, #1976d2);
-                color: white;
-                border: none;
-                padding: 10px 20px;
-                border-radius: 6px;
-                cursor: pointer;
-                font-size: 14px;
-                transition: background-color 0.2s ease;
+            
+            input[type="range"] {
+                width: 100%;
+                margin-top: 8px;
             }
-            .voice-test-btn:hover {
-                background: var(--accent-hover-color, #1565c0);
-            }
-            .voice-settings-footer {
-                padding: 20px;
-                border-top: 1px solid var(--border-color, #e0e0e0);
+            
+            .settings-actions {
                 display: flex;
-                justify-content: flex-end;
-            }
-            .voice-save-btn {
-                background: var(--success-color, #4caf50);
-                color: white;
-                border: none;
-                padding: 10px 24px;
-                border-radius: 6px;
-                cursor: pointer;
-                font-size: 14px;
-                transition: background-color 0.2s ease;
-            }
-            .voice-save-btn:hover {
-                background: var(--success-hover-color, #45a049);
+                gap: 12px;
+                margin-top: 24px;
+                padding-top: 24px;
+                border-top: 1px solid var(--gf-border-color);
             }
         `;
-        modal.appendChild(style);
+        
+        this.shadowRoot.appendChild(styles);
     }
 
-    addSettingsModalHandlers(modal) {
+    addSettingsEventListeners() {
+        const modal = this.shadowRoot.getElementById('voice-settings-modal');
+        
         // Close button
-        modal.querySelector('.voice-settings-close').addEventListener('click', () => {
-            modal.remove();
-        });
+        modal.querySelector('#close-voice-settings').onclick = () => {
+            modal.style.display = 'none';
+        };
         
-        // Backdrop click to close
-        modal.querySelector('.voice-settings-backdrop').addEventListener('click', (e) => {
-            if (e.target === e.currentTarget) {
-                modal.remove();
-            }
-        });
+        // Voice select
+        modal.querySelector('#voice-select').onchange = (e) => {
+            this.settings.selectedVoice = parseInt(e.target.value);
+            this.saveSettings();
+        };
         
-        // Update value displays
-        modal.querySelector('#rate-slider').addEventListener('input', (e) => {
-            modal.querySelector('#rate-value').textContent = e.target.value;
-        });
-        
-        modal.querySelector('#pitch-slider').addEventListener('input', (e) => {
-            modal.querySelector('#pitch-value').textContent = e.target.value;
-        });
-        
-        modal.querySelector('#volume-slider').addEventListener('input', (e) => {
-            modal.querySelector('#volume-value').textContent = e.target.value;
+        // Sliders
+        ['rate', 'pitch', 'volume'].forEach(param => {
+            const slider = modal.querySelector(`#${param}-slider`);
+            const value = modal.querySelector(`#${param}-value`);
+            
+            slider.oninput = (e) => {
+                const val = parseFloat(e.target.value);
+                this.settings[param] = val;
+                value.textContent = val.toFixed(1);
+                this.saveSettings();
+            };
         });
         
         // Test voice button
-        modal.querySelector('#test-voice').addEventListener('click', () => {
-            const testText = "This is a test of the voice settings. How does it sound?";
-            const tempSettings = {
-                selectedVoice: parseInt(modal.querySelector('#voice-select').value),
-                rate: parseFloat(modal.querySelector('#rate-slider').value),
-                pitch: parseFloat(modal.querySelector('#pitch-slider').value),
-                volume: parseFloat(modal.querySelector('#volume-slider').value)
+        modal.querySelector('#test-voice-btn').onclick = () => {
+            const testText = "Hello! This is a test of the voice settings. How does this sound?";
+            const utterance = new SpeechSynthesisUtterance(testText);
+            
+            if (this.voices.length > 0) {
+                utterance.voice = this.voices[this.settings.selectedVoice];
+            }
+            utterance.rate = this.settings.rate;
+            utterance.pitch = this.settings.pitch;
+            utterance.volume = this.settings.volume;
+            
+            speechSynthesis.cancel();
+            speechSynthesis.speak(utterance);
+        };
+        
+        // Reset button
+        modal.querySelector('#reset-voice-btn').onclick = () => {
+            this.settings = {
+                selectedVoice: 0,
+                rate: 1.0,
+                pitch: 1.0,
+                volume: 1.0
             };
-            
-            this.playTestVoice(testText, tempSettings);
-        });
-        
-        // Save settings button
-        modal.querySelector('#save-voice-settings').addEventListener('click', () => {
-            this.settings.selectedVoice = parseInt(modal.querySelector('#voice-select').value);
-            this.settings.rate = parseFloat(modal.querySelector('#rate-slider').value);
-            this.settings.pitch = parseFloat(modal.querySelector('#pitch-slider').value);
-            this.settings.volume = parseFloat(modal.querySelector('#volume-slider').value);
-            
             this.saveSettings();
-            modal.remove();
-        });
+            
+            // Update UI
+            modal.querySelector('#voice-select').value = '0';
+            modal.querySelector('#rate-slider').value = '1';
+            modal.querySelector('#rate-value').textContent = '1';
+            modal.querySelector('#pitch-slider').value = '1';
+            modal.querySelector('#pitch-value').textContent = '1';
+            modal.querySelector('#volume-slider').value = '1';
+            modal.querySelector('#volume-value').textContent = '1';
+        };
     }
 
-    playTestVoice(text, tempSettings) {
-        speechSynthesis.cancel();
-        
-        const utterance = new SpeechSynthesisUtterance(text);
-        
-        if (this.voices.length > 0 && tempSettings.selectedVoice < this.voices.length) {
-            utterance.voice = this.voices[tempSettings.selectedVoice];
-        }
-        utterance.rate = tempSettings.rate;
-        utterance.pitch = tempSettings.pitch;
-        utterance.volume = tempSettings.volume;
-        
-        speechSynthesis.speak(utterance);
-    }
-
-    show() {
-        // This method can be called to activate the feature
-        // It's already initialized automatically
+    // Method to show this is active (for debugging)
+    announcePresence() {
         console.log('Voice Download feature is active');
     }
 }
 
-// Auto-initialize when the script loads
+// Make available globally
 if (typeof window !== 'undefined') {
     window.VoiceDownload = VoiceDownload;
 }

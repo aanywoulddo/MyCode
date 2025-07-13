@@ -478,6 +478,13 @@
                         </svg>
                         <span>Voice Download</span>
                     </div>
+                    <div id="voice-settings-link" class="dropdown-item">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/>
+                            <path d="M12 1v6m0 6v6m11-5l-6-3.5 6-3.5M1 12l6 3.5L1 15.5" stroke="currentColor" stroke-width="2"/>
+                        </svg>
+                        <span>Voice Settings</span>
+                    </div>
                     <div id="bulk-delete-link" class="dropdown-item">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                             <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0v12m4-12v12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -1588,12 +1595,10 @@
             try {
                 voiceDownloadInstance = new window.VoiceDownload(shadow);
                 console.log('Voice download initialized successfully');
+                voiceDownloadInstance.announcePresence();
             } catch (error) {
                 console.error('Error initializing voice download:', error);
             }
-        }
-        if (voiceDownloadInstance) {
-            voiceDownloadInstance.show();
         }
     }
 
@@ -1627,6 +1632,7 @@
             const promptLibraryLink = shadow.getElementById('prompt-library-link');
             const wordCounterLink = shadow.getElementById('word-counter-link');
             const voiceDownloadLink = shadow.getElementById('voice-download-link');
+            const voiceSettingsLink = shadow.getElementById('voice-settings-link');
             const dropdownArrow = shadow.querySelector('.dropdown-arrow');
             
             // Toggle dropdown on toolbox button click
@@ -1679,6 +1685,24 @@
                 dropdownArrow.classList.remove('rotated');
             });
 
+            // Handle voice settings link click
+            voiceSettingsLink.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (voiceDownloadInstance) {
+                    voiceDownloadInstance.showVoiceSettings();
+                } else {
+                    // Initialize voice download if not already done
+                    initializeVoiceDownload();
+                    setTimeout(() => {
+                        if (voiceDownloadInstance) {
+                            voiceDownloadInstance.showVoiceSettings();
+                        }
+                    }, 100);
+                }
+                toolboxDropdown.style.display = 'none';
+                dropdownArrow.classList.remove('rotated');
+            });
+
             // Implement click outside to close functionality
             document.addEventListener('click', (e) => {
                 const toolboxContainer = shadow.getElementById('gemini-toolbox-container');
@@ -1711,6 +1735,9 @@
                 try {
                     voiceDownloadInstance = new VoiceDownload(shadow);
                     console.log('Voice download auto-initialized successfully');
+                    
+                    // Auto-initialize to start monitoring for responses immediately
+                    voiceDownloadInstance.announcePresence();
                 } catch (error) {
                     console.error('Error auto-initializing voice download:', error);
                 }
@@ -1721,11 +1748,12 @@
                         try {
                             voiceDownloadInstance = new VoiceDownload(shadow);
                             console.log('Voice download auto-initialized successfully (delayed)');
+                            voiceDownloadInstance.announcePresence();
                         } catch (error) {
                             console.error('Error auto-initializing voice download (delayed):', error);
                         }
                     }
-                }, 500);
+                }, 1000);
             }
         }
     }

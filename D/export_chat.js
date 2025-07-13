@@ -50,16 +50,60 @@ window.ExportChat = class ExportChat {
     }
 
     showExportModal() {
-        const modalHTML = this.getExportModalHTML();
-        this.openModal("export-modal", "Export Chat", modalHTML, 700);
+        // First show chat selection
+        this.showChatSelectionModal();
     }
 
-    getExportModalHTML() {
+    showChatSelectionModal() {
+        const modalHTML = this.getChatSelectionHTML();
+        this.openModal("chat-selection-modal", "Select Chat to Export", modalHTML, 800);
+    }
+
+    showExportOptionsModal(selectedChatId, selectedChatTitle) {
+        const modalHTML = this.getExportModalHTML(selectedChatId, selectedChatTitle);
+        this.openModal("export-options-modal", "Export Chat", modalHTML, 700);
+    }
+
+    getChatSelectionHTML() {
         const isDark = this.detectTheme() === 'dark';
         const themeClass = isDark ? 'dark-theme' : 'light-theme';
         
         return `
+            <div class="chat-selection-content ${themeClass}">
+                <div class="chat-selection-section">
+                    <h3>Select a Chat to Export</h3>
+                    <div class="chat-search-container">
+                        <input type="text" id="chat-search-input" placeholder="Search chats..." class="chat-search-input">
+                    </div>
+                    <div class="chat-list-container">
+                        <div id="chat-list" class="chat-list">
+                            <!-- Chat list will be populated here -->
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="chat-selection-actions">
+                    <button class="btn-secondary" id="cancel-chat-selection">Cancel</button>
+                    <button class="btn-primary" id="select-chat-btn" disabled>Select Chat</button>
+                </div>
+            </div>
+        `;
+    }
+
+    getExportModalHTML(selectedChatId = null, selectedChatTitle = null) {
+        const isDark = this.detectTheme() === 'dark';
+        const themeClass = isDark ? 'dark-theme' : 'light-theme';
+        
+        const selectedChatInfo = selectedChatTitle ? 
+            `<div class="selected-chat-info">
+                <span class="selected-chat-label">Selected Chat:</span>
+                <span class="selected-chat-title">${selectedChatTitle}</span>
+            </div>` : '';
+        
+        return `
             <div class="export-modal-content ${themeClass}">
+                ${selectedChatInfo}
+                
                 <div class="export-section">
                     <h3>Export Options</h3>
                     <div class="export-format-grid">
@@ -178,8 +222,7 @@ window.ExportChat = class ExportChat {
     }
 
     openModal(id, title, contentHTML, width = 600) {
-        // This will be handled by the main injector.js modal system
-        // For now, we'll create a simple modal
+        // Create a properly centered modal
         const modal = document.createElement('div');
         modal.id = id;
         modal.className = 'export-modal';
@@ -197,10 +240,68 @@ window.ExportChat = class ExportChat {
         `;
 
         document.body.appendChild(modal);
+        
+        // Ensure modal is properly centered and visible
+        setTimeout(() => {
+            modal.style.display = 'flex';
+            modal.style.opacity = '1';
+        }, 10);
+        
         this.setupModalEventListeners(modal);
     }
 
     setupModalEventListeners(modal) {
+        const modalId = modal.id;
+        
+        if (modalId === 'chat-selection-modal') {
+            this.setupChatSelectionListeners(modal);
+        } else if (modalId === 'export-options-modal') {
+            this.setupExportOptionsListeners(modal);
+        }
+    }
+
+    setupChatSelectionListeners(modal) {
+        // Load chat list
+        this.loadChatList(modal);
+        
+        // Search functionality
+        const searchInput = modal.querySelector('#chat-search-input');
+        searchInput.addEventListener('input', () => {
+            this.filterChatList(modal, searchInput.value);
+        });
+
+        // Select chat button
+        const selectBtn = modal.querySelector('#select-chat-btn');
+        selectBtn.addEventListener('click', () => {
+            const selectedChat = modal.querySelector('.chat-item.selected');
+            if (selectedChat) {
+                const chatId = selectedChat.dataset.chatId;
+                const chatTitle = selectedChat.querySelector('.chat-title').textContent;
+                this.closeModal(modal);
+                this.navigateToChatAndExport(chatId, chatTitle);
+            }
+        });
+
+        // Cancel button
+        const cancelBtn = modal.querySelector('#cancel-chat-selection');
+        cancelBtn.addEventListener('click', () => {
+            this.closeModal(modal);
+        });
+
+        // Close button
+        const closeBtn = modal.querySelector('#close-export-modal');
+        closeBtn.addEventListener('click', () => {
+            this.closeModal(modal);
+        });
+
+        // Backdrop click
+        const backdrop = modal.querySelector('.modal-backdrop');
+        backdrop.addEventListener('click', () => {
+            this.closeModal(modal);
+        });
+    }
+
+    setupExportOptionsListeners(modal) {
         // Format selection
         modal.querySelectorAll('.format-option').forEach(option => {
             option.addEventListener('click', () => {
@@ -751,6 +852,161 @@ window.ExportChat = class ExportChat {
                 notification.parentNode.removeChild(notification);
             }
         }, 3000);
+    }
+
+    loadChatList(modal) {
+        const chatList = modal.querySelector('#chat-list');
+        const conversations = this.getAllConversations();
+        
+        if (conversations.length === 0) {
+            chatList.innerHTML = `
+                <div class="no-chats-message">
+                    <p>No conversations found. Please start a conversation first.</p>
+                </div>
+            `;
+            return;
+        }
+
+        const chatListHTML = conversations.map(chat => `
+            <div class="chat-item" data-chat-id="${chat.id}">
+                <div class="chat-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </div>
+                <div class="chat-info">
+                    <div class="chat-title">${chat.title}</div>
+                    <div class="chat-preview">${chat.preview}</div>
+                </div>
+                <div class="chat-date">${chat.date}</div>
+            </div>
+        `).join('');
+
+        chatList.innerHTML = chatListHTML;
+
+        // Add click listeners to chat items
+        chatList.querySelectorAll('.chat-item').forEach(item => {
+            item.addEventListener('click', () => {
+                chatList.querySelectorAll('.chat-item').forEach(chat => chat.classList.remove('selected'));
+                item.classList.add('selected');
+                modal.querySelector('#select-chat-btn').disabled = false;
+            });
+        });
+    }
+
+    filterChatList(modal, searchTerm) {
+        const chatItems = modal.querySelectorAll('.chat-item');
+        const searchLower = searchTerm.toLowerCase();
+
+        chatItems.forEach(item => {
+            const title = item.querySelector('.chat-title').textContent.toLowerCase();
+            const preview = item.querySelector('.chat-preview').textContent.toLowerCase();
+            
+            if (title.includes(searchLower) || preview.includes(searchLower)) {
+                item.style.display = 'flex';
+            } else {
+                item.style.display = 'none';
+            }
+        });
+    }
+
+    getAllConversations() {
+        const conversations = [];
+        
+        // Get all conversation elements from the sidebar
+        const conversationElements = document.querySelectorAll('conversations-list div[data-test-id="conversation"], conversations-list .conversation-item');
+        
+        conversationElements.forEach((element, index) => {
+            const titleElement = element.querySelector('.conversation-title, .title, h3, h4');
+            const previewElement = element.querySelector('.conversation-preview, .preview, p');
+            const dateElement = element.querySelector('.conversation-date, .date, time');
+            
+            const title = titleElement ? titleElement.textContent.trim() : `Conversation ${index + 1}`;
+            const preview = previewElement ? previewElement.textContent.trim() : 'No preview available';
+            const date = dateElement ? dateElement.textContent.trim() : '';
+            
+            // Generate a unique ID for the conversation
+            const chatId = this.generateChatId(element, index);
+            
+            conversations.push({
+                id: chatId,
+                title: title,
+                preview: preview.length > 100 ? preview.substring(0, 100) + '...' : preview,
+                date: date,
+                element: element
+            });
+        });
+
+        return conversations;
+    }
+
+    generateChatId(element, index) {
+        // Try to get existing ID from element
+        const existingId = element.getAttribute('data-conversation-id') || 
+                          element.getAttribute('data-chat-id') || 
+                          element.id;
+        
+        if (existingId) {
+            return existingId;
+        }
+        
+        // Generate a new ID based on title and index
+        const titleElement = element.querySelector('.conversation-title, .title, h3, h4');
+        const title = titleElement ? titleElement.textContent.trim() : `conversation-${index}`;
+        const sanitizedTitle = title.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
+        
+        return `chat-${sanitizedTitle}-${index}`;
+    }
+
+    async navigateToChatAndExport(chatId, chatTitle) {
+        try {
+            // Find the conversation element
+            const conversationElement = document.querySelector(`[data-conversation-id="${chatId}"], [data-chat-id="${chatId}"], #${chatId}`);
+            
+            if (conversationElement) {
+                // Click on the conversation to navigate to it
+                conversationElement.click();
+                
+                // Wait for the conversation to load
+                await this.waitForConversationLoad();
+                
+                // Show export options modal
+                this.showExportOptionsModal(chatId, chatTitle);
+            } else {
+                // If we can't find the specific element, try to find by title
+                const conversations = this.getAllConversations();
+                const targetConversation = conversations.find(conv => conv.title === chatTitle);
+                
+                if (targetConversation && targetConversation.element) {
+                    targetConversation.element.click();
+                    await this.waitForConversationLoad();
+                    this.showExportOptionsModal(chatId, chatTitle);
+                } else {
+                    // Fallback: show export options for current conversation
+                    this.showExportOptionsModal(null, 'Current Conversation');
+                }
+            }
+        } catch (error) {
+            console.error('Error navigating to chat:', error);
+            // Fallback: show export options for current conversation
+            this.showExportOptionsModal(null, 'Current Conversation');
+        }
+    }
+
+    async waitForConversationLoad() {
+        return new Promise((resolve) => {
+            // Wait for conversation content to load
+            const checkForContent = () => {
+                const conversationContent = document.querySelector('div.conversation-container, message-content, user-query');
+                if (conversationContent) {
+                    resolve();
+                } else {
+                    setTimeout(checkForContent, 100);
+                }
+            };
+            
+            checkForContent();
+        });
     }
 
     detectTheme() {

@@ -51,8 +51,11 @@ class ChatExporter {
         this.showOverlay("Navigating to chat...");
         this.originalURL = window.location.href; // Save current URL
 
-        // Navigate to the target chat page
-        window.location.href = `https://gemini.google.com/c/${chatId}`;
+        // Clean the chat ID - remove 'c_' prefix if it exists
+        const cleanChatId = chatId.startsWith('c_') ? chatId.substring(2) : chatId;
+
+        // Navigate to the target chat page using the correct URL format
+        window.location.href = `https://gemini.google.com/app/${cleanChatId}`;
 
         try {
             // Wait for the conversation to be loaded on the new page

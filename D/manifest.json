@@ -11,7 +11,7 @@
   "content_scripts": [
     {
       "matches": ["*://gemini.google.com/*"],
-      "js": ["prompt_library.js", "word_counter.js", "voice_mode.js", "injector.js"]
+      "js": ["prompt_library.js", "word_counter.js", "voice_mode.js", "export_chat.js", "injector.js"]
     }
   ],
   "icons": {
@@ -21,7 +21,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["prompt_library.html", "prompt_library.css", "prompt_library.js", "word_counter.js", "voice_mode.js"],
+      "resources": ["prompt_library.html", "prompt_library.css", "prompt_library.js", "word_counter.js", "voice_mode.js", "export_chat.js", "export_chat.css"],
       "matches": ["*://gemini.google.com/*"]
     }
   ]

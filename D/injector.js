@@ -18,6 +18,7 @@
     let isModalOpen = false;
     let promptLibraryInstance;
     let voiceModeInstance;
+    let exportChatInstance;
 
     // State object to hold dynamic data, similar to the target's storage module.
     let state = {
@@ -487,6 +488,16 @@
                             <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0v12m4-12v12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                         </svg>
                         <span>Bulk Delete</span>
+                    </div>
+                    <div id="export-chat-link" class="dropdown-item">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M14 2H6C4.89543 2 4 2.89543 4 4V20C4 21.1046 4.89543 22 6 22H18C19.1046 22 20 21.1046 20 20V8L14 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M14 2V8H20" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M10.5 15.5C10.5 16.3284 9.82843 17 9 17H7.5C6.67157 17 6 16.3284 6 15.5V12.5C6 11.6716 6.67157 11 7.5 11H9C9.82843 11 10.5 11.6716 10.5 12.5V13" stroke="currentColor" stroke-width="2"/>
+                            <path d="M13.5 17V11H15.5C16.3284 11 17 11.6716 17 12.5V14.5C17 15.3284 16.3284 16 15.5 16H13.5" stroke="currentColor" stroke-width="2"/>
+                            <path d="M17 13.5H13.5" stroke="currentColor" stroke-width="2"/>
+                        </svg>
+                        <span>Export Chat</span>
                     </div>
                 </div>
             </div>
@@ -1543,10 +1554,11 @@
             }
         }
 
-        // Wait for both HTML and CSS to be loaded
-        const [htmlContent, cssContent] = await Promise.all([
+        // Wait for HTML, CSS, and export chat CSS to be loaded
+        const [htmlContent, cssContent, exportChatCSS] = await Promise.all([
             fetchWebAccessibleResource('prompt_library.html'),
-            fetchWebAccessibleResource('prompt_library.css')
+            fetchWebAccessibleResource('prompt_library.css'),
+            fetchWebAccessibleResource('export_chat.css')
         ]);
 
         if (htmlContent) {
@@ -1559,6 +1571,13 @@
             const styleElement = document.createElement('style');
             styleElement.textContent = cssContent;
             shadow.appendChild(styleElement);
+        }
+
+        if (exportChatCSS) {
+            const styleElement = document.createElement('style');
+            styleElement.textContent = exportChatCSS;
+            shadow.appendChild(styleElement);
+            console.log('Export chat CSS injected successfully');
         }
     }
 
@@ -1599,6 +1618,33 @@
         }
     }
 
+    // --- EXPORT CHAT FUNCTIONALITY ---
+    
+    async function initializeExportChat() {
+        if (!exportChatInstance && window.ExportChat) {
+            try {
+                exportChatInstance = new window.ExportChat(shadow);
+                console.log('Export Chat initialized successfully');
+                exportChatInstance.showExportModal();
+            } catch (error) {
+                console.error('Error initializing Export Chat:', error);
+            }
+        } else if (exportChatInstance) {
+            // If already initialized, just show the modal
+            exportChatInstance.showExportModal();
+        } else {
+            // If ExportChat class is not available, try to load it
+            console.log('ExportChat class not found, attempting to load...');
+            setTimeout(() => {
+                if (window.ExportChat) {
+                    initializeExportChat();
+                } else {
+                    console.error('ExportChat class not available');
+                }
+            }, 100);
+        }
+    }
+
     // --- REFACTORED: INITIALIZATION ---
 
     async function init() {
@@ -1630,6 +1676,7 @@
             const wordCounterLink = shadow.getElementById('word-counter-link');
             const voiceModeLink = shadow.getElementById('voice-mode-link');
             const voiceSettingsLink = shadow.getElementById('voice-settings-link');
+            const exportChatLink = shadow.getElementById('export-chat-link');
             const dropdownArrow = shadow.querySelector('.dropdown-arrow');
             
             // Toggle dropdown on toolbox button click
@@ -1696,6 +1743,14 @@
                         }
                     }, 100);
                 }
+                toolboxDropdown.style.display = 'none';
+                dropdownArrow.classList.remove('rotated');
+            });
+
+            // Handle export chat link click
+            exportChatLink.addEventListener('click', (e) => {
+                e.stopPropagation();
+                initializeExportChat();
                 toolboxDropdown.style.display = 'none';
                 dropdownArrow.classList.remove('rotated');
             });

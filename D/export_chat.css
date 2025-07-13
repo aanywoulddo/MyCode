@@ -1,4 +1,4 @@
-THIS SHOULD BE A LINTER ERROR/* Export Chat Modal Styles */
+/* Export Chat Modal Styles */
 .export-modal {
     position: fixed;
     top: 0;
@@ -10,6 +10,12 @@ THIS SHOULD BE A LINTER ERROR/* Export Chat Modal Styles */
     align-items: center;
     justify-content: center;
     font-family: 'Google Sans', 'Roboto', sans-serif;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.export-modal.show {
+    opacity: 1;
 }
 
 .export-modal .modal-backdrop {
@@ -31,6 +37,12 @@ THIS SHOULD BE A LINTER ERROR/* Export Chat Modal Styles */
     overflow: hidden;
     position: relative;
     animation: modalSlideIn 0.3s ease-out;
+    transform: scale(0.95);
+    transition: transform 0.3s ease;
+}
+
+.export-modal.show .modal-container {
+    transform: scale(1);
 }
 
 @keyframes modalSlideIn {
@@ -102,6 +114,161 @@ THIS SHOULD BE A LINTER ERROR/* Export Chat Modal Styles */
 .export-modal-content h3 {
     margin: 0 0 16px 0;
     font-size: 16px;
+    font-weight: 500;
+    color: var(--gf-text-primary);
+}
+
+/* Chat Selection Styles */
+.chat-selection-content {
+    color: var(--gf-text-primary);
+}
+
+.chat-selection-section {
+    margin-bottom: 24px;
+}
+
+.chat-search-container {
+    margin-bottom: 16px;
+}
+
+.chat-search-input {
+    width: 100%;
+    padding: 12px 16px;
+    border: 1px solid var(--gf-border-color);
+    border-radius: 8px;
+    background: var(--gf-bg-primary);
+    color: var(--gf-text-primary);
+    font-size: 14px;
+    font-family: inherit;
+    transition: border-color 0.2s ease;
+    box-sizing: border-box;
+}
+
+.chat-search-input:focus {
+    outline: none;
+    border-color: var(--gf-blue-accent);
+    box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.2);
+}
+
+.chat-search-input::placeholder {
+    color: var(--gf-text-secondary);
+}
+
+.chat-list-container {
+    max-height: 400px;
+    overflow-y: auto;
+    border: 1px solid var(--gf-border-color);
+    border-radius: 8px;
+    background: var(--gf-bg-primary);
+}
+
+.chat-list {
+    padding: 0;
+    margin: 0;
+}
+
+.chat-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px;
+    border-bottom: 1px solid var(--gf-border-color);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    background: var(--gf-bg-primary);
+}
+
+.chat-item:last-child {
+    border-bottom: none;
+}
+
+.chat-item:hover {
+    background: var(--gf-hover-bg);
+}
+
+.chat-item.selected {
+    background: rgba(26, 115, 232, 0.08);
+    border-left: 3px solid var(--gf-blue-accent);
+}
+
+.chat-icon {
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--gf-bg-secondary);
+    border-radius: 8px;
+    color: var(--gf-text-secondary);
+}
+
+.chat-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.chat-title {
+    font-weight: 500;
+    font-size: 14px;
+    color: var(--gf-text-primary);
+    margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.chat-preview {
+    font-size: 12px;
+    color: var(--gf-text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.chat-date {
+    font-size: 12px;
+    color: var(--gf-text-secondary);
+    white-space: nowrap;
+}
+
+.no-chats-message {
+    padding: 32px 16px;
+    text-align: center;
+    color: var(--gf-text-secondary);
+}
+
+.no-chats-message p {
+    margin: 0;
+    font-size: 14px;
+}
+
+.chat-selection-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+    padding-top: 16px;
+    border-top: 1px solid var(--gf-border-color);
+}
+
+.selected-chat-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px;
+    background: var(--gf-bg-secondary);
+    border-radius: 8px;
+    margin-bottom: 16px;
+    border: 1px solid var(--gf-border-color);
+}
+
+.selected-chat-label {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--gf-text-secondary);
+}
+
+.selected-chat-title {
+    font-size: 14px;
     font-weight: 500;
     color: var(--gf-text-primary);
 }
@@ -251,16 +418,15 @@ THIS SHOULD BE A LINTER ERROR/* Export Chat Modal Styles */
 /* Export Actions */
 .export-actions {
     display: flex;
-    justify-content: flex-end;
     gap: 12px;
-    margin-top: 24px;
-    padding-top: 20px;
+    justify-content: flex-end;
+    padding-top: 16px;
     border-top: 1px solid var(--gf-border-color);
 }
 
 .btn-primary,
 .btn-secondary {
-    padding: 10px 20px;
+    padding: 12px 24px;
     border-radius: 8px;
     font-size: 14px;
     font-weight: 500;
@@ -276,41 +442,41 @@ THIS SHOULD BE A LINTER ERROR/* Export Chat Modal Styles */
 }
 
 .btn-primary:hover:not(:disabled) {
-    background: #1557b0;
-    box-shadow: 0 2px 8px rgba(26, 115, 232, 0.3);
+    background: #1a5fdb;
+    transform: translateY(-1px);
 }
 
 .btn-primary:disabled {
     background: var(--gf-text-secondary);
     cursor: not-allowed;
-    box-shadow: none;
+    transform: none;
 }
 
 .btn-secondary {
-    background: transparent;
+    background: var(--gf-bg-secondary);
     color: var(--gf-text-primary);
     border: 1px solid var(--gf-border-color);
 }
 
 .btn-secondary:hover {
     background: var(--gf-hover-bg);
-    border-color: var(--gf-text-secondary);
 }
 
 /* Success Notification */
 .export-success-notification {
     position: fixed;
-    bottom: 20px;
+    top: 20px;
     right: 20px;
     background: #4caf50;
     color: white;
-    padding: 12px 20px;
+    padding: 16px 20px;
     border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     z-index: 10001;
-    font-family: 'Google Sans', sans-serif;
-    font-size: 14px;
     animation: notificationSlideIn 0.3s ease-out;
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
 @keyframes notificationSlideIn {
@@ -326,68 +492,69 @@ THIS SHOULD BE A LINTER ERROR/* Export Chat Modal Styles */
 
 /* Dark Theme Overrides */
 .dark-theme .export-modal .modal-container {
-    background: var(--gf-bg-primary-dark);
-    border-color: var(--gf-border-color-dark);
+    background: #1a1a1a;
+    border-color: #333;
 }
 
 .dark-theme .format-option {
-    background: var(--gf-bg-primary-dark);
-    border-color: var(--gf-border-color-dark);
+    background: #2a2a2a;
+    border-color: #444;
 }
 
 .dark-theme .format-option:hover {
-    background: var(--gf-hover-bg-dark);
+    background: #333;
 }
 
 .dark-theme .format-option.selected {
-    background: rgba(138, 180, 248, 0.1);
+    background: rgba(26, 115, 232, 0.15);
 }
 
 .dark-theme .format-icon {
-    background: var(--gf-bg-secondary-dark);
+    background: #333;
 }
 
 .dark-theme .setting-group input[type="text"] {
-    background: var(--gf-bg-primary-dark);
-    border-color: var(--gf-border-color-dark);
-    color: var(--gf-text-primary-dark);
+    background: #2a2a2a;
+    border-color: #444;
+    color: #fff;
 }
 
 .dark-theme .setting-group input[type="text"]:focus {
-    border-color: var(--gf-accent-primary-dark);
-    box-shadow: 0 0 0 2px rgba(138, 180, 248, 0.2);
+    border-color: var(--gf-blue-accent);
 }
 
 .dark-theme .btn-secondary {
-    border-color: var(--gf-border-color-dark);
-    color: var(--gf-text-primary-dark);
+    background: #2a2a2a;
+    border-color: #444;
+    color: #fff;
 }
 
 .dark-theme .btn-secondary:hover {
-    background: var(--gf-hover-bg-dark);
+    background: #333;
 }
 
 /* Responsive Design */
 @media (max-width: 768px) {
     .export-modal .modal-container {
+        width: 95%;
         margin: 20px;
-        max-height: calc(100vh - 40px);
     }
-    
+
     .export-format-grid {
         grid-template-columns: 1fr;
     }
-    
+
     .theme-options,
-    .orientation-options {
+    .orientation-options,
+    .export-range-options {
         flex-direction: column;
         gap: 8px;
     }
-    
+
     .export-actions {
         flex-direction: column;
     }
-    
+
     .btn-primary,
     .btn-secondary {
         width: 100%;
@@ -401,8 +568,7 @@ THIS SHOULD BE A LINTER ERROR/* Export Chat Modal Styles */
 }
 
 .export-modal .modal-body::-webkit-scrollbar-track {
-    background: var(--gf-bg-secondary);
-    border-radius: 3px;
+    background: transparent;
 }
 
 .export-modal .modal-body::-webkit-scrollbar-thumb {

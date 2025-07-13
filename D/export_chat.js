@@ -1,19 +1,14 @@
 // Make ExportChat globally available
 window.ExportChat = class ExportChat {
-    constructor(shadowRoot) {
-        this.shadowRoot = shadowRoot;
+    constructor() {
         this.exportSettings = {
-            fileName: "gemini-conversation",
-            format: "pdf",
-            pdfTheme: "light",
-            orientation: "portrait",
-            compression: true,
-            uiTheme: "light"
+            format: 'pdf',
+            fileName: 'gemini-chat-export',
+            pdfTheme: 'auto',
+            orientation: 'portrait',
+            compression: false
         };
-        this.isExportDropdownOpen = false;
-        this.selectedMessageCount = 0;
-        this.isSelectionMode = false;
-        this.init();
+        this.selectedChat = null;
     }
 
     init() {
@@ -23,30 +18,25 @@ window.ExportChat = class ExportChat {
 
     loadSettings() {
         try {
-            const saved = localStorage.getItem("gemini-export-settings");
+            const saved = localStorage.getItem('gemini-export-settings');
             if (saved) {
-                const settings = JSON.parse(saved);
-                Object.keys(this.exportSettings).forEach(key => {
-                    if (settings.hasOwnProperty(key)) {
-                        this.exportSettings[key] = settings[key];
-                    }
-                });
+                this.exportSettings = { ...this.exportSettings, ...JSON.parse(saved) };
             }
         } catch (error) {
-            console.error("Failed to load export settings:", error);
+            console.error('Error loading export settings:', error);
         }
     }
 
     saveSettings() {
         try {
-            localStorage.setItem("gemini-export-settings", JSON.stringify(this.exportSettings));
+            localStorage.setItem('gemini-export-settings', JSON.stringify(this.exportSettings));
         } catch (error) {
-            console.error("Failed to save export settings:", error);
+            console.error('Error saving export settings:', error);
         }
     }
 
     setupEventListeners() {
-        // Event listeners will be set up when the export feature is activated
+        // This will be called from the main injector
     }
 
     showExportModal() {
@@ -244,7 +234,7 @@ window.ExportChat = class ExportChat {
         // Ensure modal is properly centered and visible
         setTimeout(() => {
             modal.style.display = 'flex';
-            modal.style.opacity = '1';
+            modal.classList.add('show');
         }, 10);
         
         this.setupModalEventListeners(modal);
@@ -368,492 +358,6 @@ window.ExportChat = class ExportChat {
         }
     }
 
-    async performExport(modal) {
-        const exportRange = modal.querySelector('input[name="export-range"]:checked').value;
-        const exportBtn = modal.querySelector('#start-export');
-        const originalText = exportBtn.textContent;
-
-        try {
-            exportBtn.textContent = 'Exporting...';
-            exportBtn.disabled = true;
-
-            let conversationData;
-            if (exportRange === 'current') {
-                conversationData = await this.extractCurrentConversation();
-            } else {
-                conversationData = await this.extractSelectedMessages();
-            }
-
-            if (!conversationData || conversationData.length === 0) {
-                alert('No conversation content found to export.');
-                return;
-            }
-
-            await this.exportConversation(conversationData);
-            this.saveSettings();
-            this.closeModal(modal);
-            
-            // Show success message
-            this.showSuccessMessage('Export completed successfully!');
-
-        } catch (error) {
-            console.error('Export failed:', error);
-            alert(`Export failed: ${error.message}`);
-        } finally {
-            exportBtn.textContent = originalText;
-            exportBtn.disabled = false;
-        }
-    }
-
-    async extractCurrentConversation() {
-        // Scroll to top to load all messages
-        await this.scrollToTop();
-        
-        const conversationElements = document.querySelectorAll('div.conversation-container');
-        const conversation = [];
-
-        conversationElements.forEach(container => {
-            const userQuery = container.querySelector('user-query, user-query-content');
-            const geminiResponse = container.querySelector('message-content');
-
-            let question = '';
-            let answer = '';
-
-            if (userQuery) {
-                const queryText = userQuery.querySelector('.query-text-line');
-                if (queryText) {
-                    question = this.cleanHTML(queryText.innerHTML);
-                } else {
-                    question = this.cleanHTML(userQuery.innerHTML);
-                }
-            }
-
-            if (geminiResponse) {
-                const responseContent = geminiResponse.querySelector('.markdown-main-panel, .output-content .markdown, .output-content');
-                if (responseContent) {
-                    answer = this.cleanHTML(responseContent.innerHTML);
-                } else {
-                    answer = this.cleanHTML(geminiResponse.innerHTML);
-                }
-            }
-
-            if (question || answer) {
-                conversation.push({
-                    question: question || null,
-                    answer: answer || null
-                });
-            }
-        });
-
-        return conversation;
-    }
-
-    async extractSelectedMessages() {
-        // This would be implemented if we add message selection functionality
-        // For now, return current conversation
-        return await this.extractCurrentConversation();
-    }
-
-    async scrollToTop() {
-        const scrollContainer = this.findScrollContainer();
-        if (!scrollContainer) return;
-
-        let attempts = 0;
-        const maxAttempts = 50;
-
-        while (attempts < maxAttempts) {
-            const previousHeight = scrollContainer.scrollHeight;
-            scrollContainer.scrollTop = 0;
-            
-            await new Promise(resolve => setTimeout(resolve, 100));
-            
-            if (scrollContainer.scrollHeight === previousHeight) {
-                break;
-            }
-            
-            attempts++;
-        }
-    }
-
-    findScrollContainer() {
-        const selectors = [
-            '#chat-history[data-test-id="chat-history-container"]',
-            'infinite-scroller.chat-history',
-            '.chat-history-scroll-container',
-            'main .conversation-area'
-        ];
-
-        for (const selector of selectors) {
-            const element = document.querySelector(selector);
-            if (element) return element;
-        }
-
-        return document.documentElement;
-    }
-
-    cleanHTML(html) {
-        if (!html) return '';
-        
-        const div = document.createElement('div');
-        div.innerHTML = html;
-        
-        // Remove unwanted elements
-        div.querySelectorAll('.gemini-export-checkbox-container, .code-block-decoration .buttons, sources-carousel-inline, sources-carousel, source-footnote').forEach(el => el.remove());
-        
-        return div.innerHTML.trim();
-    }
-
-    async exportConversation(conversation) {
-        const filename = this.exportSettings.fileName || 'gemini-conversation';
-        const timestamp = new Date().toISOString().split('T')[0] + '-' + new Date().toTimeString().split(' ')[0].replace(/:/g, '-');
-        const baseFilename = `${filename}-${timestamp}`;
-
-        switch (this.exportSettings.format) {
-            case 'pdf':
-                await this.exportAsPDF(conversation, baseFilename);
-                break;
-            case 'html':
-                this.exportAsHTML(conversation, baseFilename);
-                break;
-            case 'md':
-                this.exportAsMarkdown(conversation, baseFilename);
-                break;
-            case 'json':
-                this.exportAsJSON(conversation, baseFilename);
-                break;
-            case 'txt':
-                this.exportAsText(conversation, baseFilename);
-                break;
-            case 'csv':
-                this.exportAsCSV(conversation, baseFilename);
-                break;
-            default:
-                throw new Error(`Unsupported format: ${this.exportSettings.format}`);
-        }
-    }
-
-    async exportAsPDF(conversation, filename) {
-        // For PDF export, we'll use html2pdf library if available
-        if (typeof html2pdf === 'undefined') {
-            // Fallback to HTML export if html2pdf is not available
-            this.exportAsHTML(conversation, filename);
-            return;
-        }
-
-        const htmlContent = this.generatePDFHTML(conversation);
-        const element = document.createElement('div');
-        element.innerHTML = htmlContent;
-        element.style.position = 'absolute';
-        element.style.left = '-9999px';
-        document.body.appendChild(element);
-
-        const options = {
-            margin: 0,
-            filename: `${filename}.pdf`,
-            image: { type: 'jpeg', quality: 0.95 },
-            html2canvas: { 
-                scale: 2, 
-                useCORS: true,
-                backgroundColor: this.exportSettings.pdfTheme === 'dark' ? '#131314' : '#FFFFFF'
-            },
-            jsPDF: { 
-                unit: 'pt', 
-                format: 'a4', 
-                orientation: this.exportSettings.orientation,
-                compress: this.exportSettings.compression 
-            }
-        };
-
-        try {
-            await html2pdf().from(element).set(options).save();
-        } finally {
-            document.body.removeChild(element);
-        }
-    }
-
-    exportAsHTML(conversation, filename) {
-        const htmlContent = this.generateHTML(conversation);
-        this.downloadFile(htmlContent, `${filename}.html`, 'text/html');
-    }
-
-    exportAsMarkdown(conversation, filename) {
-        const markdownContent = this.generateMarkdown(conversation);
-        this.downloadFile(markdownContent, `${filename}.md`, 'text/markdown');
-    }
-
-    exportAsJSON(conversation, filename) {
-        const jsonContent = JSON.stringify({
-            title: this.exportSettings.fileName || 'Gemini Conversation',
-            exportedAt: new Date().toISOString(),
-            conversation: conversation
-        }, null, 2);
-        this.downloadFile(jsonContent, `${filename}.json`, 'application/json');
-    }
-
-    exportAsText(conversation, filename) {
-        const textContent = this.generateText(conversation);
-        this.downloadFile(textContent, `${filename}.txt`, 'text/plain');
-    }
-
-    exportAsCSV(conversation, filename) {
-        const csvContent = this.generateCSV(conversation);
-        this.downloadFile(csvContent, `${filename}.csv`, 'text/csv');
-    }
-
-    generatePDFHTML(conversation) {
-        const isDark = this.exportSettings.pdfTheme === 'dark' || 
-                      (this.exportSettings.pdfTheme === 'auto' && this.detectTheme() === 'dark');
-        
-        const bgColor = isDark ? '#131314' : '#FFFFFF';
-        const textColor = isDark ? '#e8eaed' : '#1f1f1f';
-        const borderColor = isDark ? '#5f6368' : '#dadce0';
-
-        return `
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <meta charset="UTF-8">
-                <style>
-                    body {
-                        font-family: 'Google Sans', Arial, sans-serif;
-                        background-color: ${bgColor};
-                        color: ${textColor};
-                        margin: 0;
-                        padding: 20px;
-                        font-size: 12pt;
-                        line-height: 1.4;
-                    }
-                    .conversation-wrapper {
-                        max-width: 800px;
-                        margin: 0 auto;
-                    }
-                    .export-header {
-                        margin-bottom: 20px;
-                        padding-bottom: 10px;
-                        border-bottom: 1px solid ${borderColor};
-                    }
-                    .export-header h1 {
-                        font-size: 18pt;
-                        margin: 0 0 5px 0;
-                    }
-                    .export-header .timestamp {
-                        font-size: 10pt;
-                        color: ${isDark ? '#9aa0a6' : '#5f6368'};
-                    }
-                    .message-pair {
-                        margin-bottom: 15px;
-                        border: 1px solid ${borderColor};
-                        border-radius: 8px;
-                        overflow: hidden;
-                    }
-                    .message-part {
-                        padding: 10px;
-                    }
-                    .message-part.question {
-                        background-color: ${isDark ? 'rgba(255, 255, 255, 0.03)' : '#f8f9fa'};
-                    }
-                    .speaker-label {
-                        font-weight: bold;
-                        margin-bottom: 5px;
-                        font-size: 11pt;
-                    }
-                    .content {
-                        font-size: 11pt;
-                        line-height: 1.4;
-                    }
-                    .content p {
-                        margin: 0.5em 0;
-                    }
-                    .content code {
-                        background-color: ${isDark ? 'rgba(255, 255, 255, 0.1)' : '#f1f3f4'};
-                        padding: 2px 4px;
-                        border-radius: 3px;
-                        font-family: 'Roboto Mono', monospace;
-                    }
-                    .content pre {
-                        background-color: ${isDark ? '#2d2d2f' : '#f8f9fa'};
-                        padding: 10px;
-                        border-radius: 5px;
-                        overflow-x: auto;
-                        font-family: 'Roboto Mono', monospace;
-                        font-size: 10pt;
-                    }
-                </style>
-            </head>
-            <body>
-                <div class="conversation-wrapper">
-                    <div class="export-header">
-                        <h1>${this.exportSettings.fileName || 'Gemini Conversation'}</h1>
-                        <div class="timestamp">Exported on: ${new Date().toLocaleString()}</div>
-                    </div>
-                    ${conversation.map(msg => `
-                        <div class="message-pair">
-                            ${msg.question ? `
-                                <div class="message-part question">
-                                    <div class="speaker-label">User</div>
-                                    <div class="content">${msg.question}</div>
-                                </div>
-                            ` : ''}
-                            ${msg.answer ? `
-                                <div class="message-part answer">
-                                    <div class="speaker-label">Gemini</div>
-                                    <div class="content">${msg.answer}</div>
-                                </div>
-                            ` : ''}
-                        </div>
-                    `).join('')}
-                </div>
-            </body>
-            </html>
-        `;
-    }
-
-    generateHTML(conversation) {
-        return this.generatePDFHTML(conversation);
-    }
-
-    generateMarkdown(conversation) {
-        let markdown = `# ${this.exportSettings.fileName || 'Gemini Conversation'}\n\n`;
-        markdown += `Exported on: ${new Date().toLocaleString()}\n\n`;
-        markdown += '---\n\n';
-
-        conversation.forEach(msg => {
-            if (msg.question) {
-                markdown += `**User:**\n${this.htmlToMarkdown(msg.question)}\n\n`;
-            }
-            if (msg.answer) {
-                markdown += `**Gemini:**\n${this.htmlToMarkdown(msg.answer)}\n\n`;
-            }
-            markdown += '---\n\n';
-        });
-
-        return markdown;
-    }
-
-    generateText(conversation) {
-        let text = `${this.exportSettings.fileName || 'Gemini Conversation'}\n`;
-        text += `Exported on: ${new Date().toLocaleString()}\n\n`;
-        text += '='.repeat(50) + '\n\n';
-
-        conversation.forEach(msg => {
-            if (msg.question) {
-                text += `User:\n${this.htmlToText(msg.question)}\n\n`;
-            }
-            if (msg.answer) {
-                text += `Gemini:\n${this.htmlToText(msg.answer)}\n\n`;
-            }
-            text += '='.repeat(50) + '\n\n';
-        });
-
-        return text;
-    }
-
-    generateCSV(conversation) {
-        let csv = 'Timestamp,Speaker,Content\n';
-        
-        conversation.forEach(msg => {
-            const timestamp = new Date().toISOString();
-            
-            if (msg.question) {
-                csv += `"${timestamp}","User","${this.escapeCSV(this.htmlToText(msg.question))}"\n`;
-            }
-            if (msg.answer) {
-                csv += `"${timestamp}","Gemini","${this.escapeCSV(this.htmlToText(msg.answer))}"\n`;
-            }
-        });
-
-        return csv;
-    }
-
-    htmlToMarkdown(html) {
-        if (!html) return '';
-        
-        const div = document.createElement('div');
-        div.innerHTML = html;
-        
-        // Convert common HTML elements to Markdown
-        div.querySelectorAll('strong, b').forEach(el => {
-            el.outerHTML = `**${el.textContent}**`;
-        });
-        
-        div.querySelectorAll('em, i').forEach(el => {
-            el.outerHTML = `*${el.textContent}*`;
-        });
-        
-        div.querySelectorAll('code').forEach(el => {
-            if (el.parentElement.tagName === 'PRE') {
-                el.outerHTML = `\`\`\`\n${el.textContent}\n\`\`\``;
-            } else {
-                el.outerHTML = `\`${el.textContent}\``;
-            }
-        });
-        
-        div.querySelectorAll('pre').forEach(el => {
-            if (!el.querySelector('code')) {
-                el.outerHTML = `\`\`\`\n${el.textContent}\n\`\`\``;
-            }
-        });
-        
-        return div.textContent || div.innerText || '';
-    }
-
-    htmlToText(html) {
-        if (!html) return '';
-        
-        const div = document.createElement('div');
-        div.innerHTML = html;
-        return div.textContent || div.innerText || '';
-    }
-
-    escapeCSV(text) {
-        return text.replace(/"/g, '""');
-    }
-
-    downloadFile(content, filename, mimeType) {
-        const blob = new Blob([content], { type: mimeType });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-    }
-
-    closeModal(modal) {
-        if (modal && modal.parentNode) {
-            modal.parentNode.removeChild(modal);
-        }
-    }
-
-    showSuccessMessage(message) {
-        const notification = document.createElement('div');
-        notification.className = 'export-success-notification';
-        notification.textContent = message;
-        notification.style.cssText = `
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            background: #4caf50;
-            color: white;
-            padding: 12px 20px;
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-            z-index: 10000;
-            font-family: 'Google Sans', sans-serif;
-            font-size: 14px;
-        `;
-        
-        document.body.appendChild(notification);
-        
-        setTimeout(() => {
-            if (notification.parentNode) {
-                notification.parentNode.removeChild(notification);
-            }
-        }, 3000);
-    }
-
     loadChatList(modal) {
         const chatList = modal.querySelector('#chat-list');
         const conversations = this.getAllConversations();
@@ -914,12 +418,12 @@ window.ExportChat = class ExportChat {
         const conversations = [];
         
         // Get all conversation elements from the sidebar
-        const conversationElements = document.querySelectorAll('conversations-list div[data-test-id="conversation"], conversations-list .conversation-item');
+        const conversationElements = document.querySelectorAll('conversations-list div[data-test-id="conversation"], conversations-list .conversation-item, [data-test-id="conversation"], .conversation-item');
         
         conversationElements.forEach((element, index) => {
-            const titleElement = element.querySelector('.conversation-title, .title, h3, h4');
-            const previewElement = element.querySelector('.conversation-preview, .preview, p');
-            const dateElement = element.querySelector('.conversation-date, .date, time');
+            const titleElement = element.querySelector('.conversation-title, .title, h3, h4, [data-test-id="conversation-title"]');
+            const previewElement = element.querySelector('.conversation-preview, .preview, p, [data-test-id="conversation-preview"]');
+            const dateElement = element.querySelector('.conversation-date, .date, time, [data-test-id="conversation-date"]');
             
             const title = titleElement ? titleElement.textContent.trim() : `Conversation ${index + 1}`;
             const preview = previewElement ? previewElement.textContent.trim() : 'No preview available';
@@ -997,7 +501,7 @@ window.ExportChat = class ExportChat {
         return new Promise((resolve) => {
             // Wait for conversation content to load
             const checkForContent = () => {
-                const conversationContent = document.querySelector('div.conversation-container, message-content, user-query');
+                const conversationContent = document.querySelector('div.conversation-container, message-content, user-query, [data-test-id="conversation-content"]');
                 if (conversationContent) {
                     resolve();
                 } else {
@@ -1007,6 +511,340 @@ window.ExportChat = class ExportChat {
             
             checkForContent();
         });
+    }
+
+    closeModal(modal) {
+        modal.classList.remove('show');
+        setTimeout(() => {
+            if (modal.parentNode) {
+                modal.parentNode.removeChild(modal);
+            }
+        }, 300);
+    }
+
+    performExport(modal) {
+        const format = this.exportSettings.format;
+        const fileName = this.exportSettings.fileName || 'gemini-chat-export';
+        
+        try {
+            const chatContent = this.extractChatContent();
+            const exportData = this.formatExportData(chatContent, format);
+            
+            this.downloadFile(exportData, fileName, format);
+            this.showSuccessNotification();
+            this.saveSettings();
+            this.closeModal(modal);
+        } catch (error) {
+            console.error('Export failed:', error);
+            this.showErrorNotification('Export failed. Please try again.');
+        }
+    }
+
+    extractChatContent() {
+        const messages = [];
+        const messageElements = document.querySelectorAll('message-content, user-query, [data-test-id="message"], .message');
+        
+        messageElements.forEach((element, index) => {
+            const role = this.determineMessageRole(element);
+            const content = this.extractMessageContent(element);
+            
+            if (content) {
+                messages.push({
+                    role: role,
+                    content: content,
+                    timestamp: new Date().toISOString(),
+                    index: index
+                });
+            }
+        });
+        
+        return {
+            title: this.getConversationTitle(),
+            messages: messages,
+            exportDate: new Date().toISOString(),
+            totalMessages: messages.length
+        };
+    }
+
+    determineMessageRole(element) {
+        const classes = element.className.toLowerCase();
+        const testId = element.getAttribute('data-test-id') || '';
+        
+        if (classes.includes('user') || testId.includes('user') || element.querySelector('.user-message')) {
+            return 'user';
+        } else if (classes.includes('assistant') || testId.includes('assistant') || element.querySelector('.assistant-message')) {
+            return 'assistant';
+        } else {
+            // Default to assistant if we can't determine
+            return 'assistant';
+        }
+    }
+
+    extractMessageContent(element) {
+        // Try multiple selectors to find the message content
+        const contentSelectors = [
+            '.message-content',
+            '.content',
+            'p',
+            'div',
+            '[data-test-id="message-content"]'
+        ];
+        
+        for (const selector of contentSelectors) {
+            const contentElement = element.querySelector(selector);
+            if (contentElement && contentElement.textContent.trim()) {
+                return contentElement.textContent.trim();
+            }
+        }
+        
+        // Fallback to the element's own text content
+        return element.textContent.trim();
+    }
+
+    getConversationTitle() {
+        const titleElement = document.querySelector('.conversation-title, .title, h1, h2, [data-test-id="conversation-title"]');
+        return titleElement ? titleElement.textContent.trim() : 'Gemini Chat Export';
+    }
+
+    formatExportData(chatContent, format) {
+        switch (format) {
+            case 'pdf':
+                return this.formatAsPDF(chatContent);
+            case 'html':
+                return this.formatAsHTML(chatContent);
+            case 'md':
+                return this.formatAsMarkdown(chatContent);
+            case 'json':
+                return this.formatAsJSON(chatContent);
+            case 'txt':
+                return this.formatAsText(chatContent);
+            case 'csv':
+                return this.formatAsCSV(chatContent);
+            default:
+                return this.formatAsText(chatContent);
+        }
+    }
+
+    formatAsPDF(chatContent) {
+        const html = this.formatAsHTML(chatContent);
+        return html; // For now, return HTML that can be converted to PDF
+    }
+
+    formatAsHTML(chatContent) {
+        const theme = this.exportSettings.pdfTheme === 'auto' ? this.detectTheme() : this.exportSettings.pdfTheme;
+        const isDark = theme === 'dark';
+        
+        return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${chatContent.title}</title>
+    <style>
+        body {
+            font-family: 'Google Sans', 'Roboto', sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background: ${isDark ? '#1a1a1a' : '#ffffff'};
+            color: ${isDark ? '#ffffff' : '#000000'};
+        }
+        .chat-container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .chat-header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid ${isDark ? '#333' : '#e0e0e0'};
+        }
+        .chat-title {
+            font-size: 24px;
+            font-weight: 500;
+            margin-bottom: 10px;
+        }
+        .chat-meta {
+            font-size: 14px;
+            color: ${isDark ? '#888' : '#666'};
+        }
+        .message {
+            margin-bottom: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid;
+        }
+        .message.user {
+            background: ${isDark ? '#2a2a2a' : '#f8f9fa'};
+            border-left-color: #4285f4;
+        }
+        .message.assistant {
+            background: ${isDark ? '#333' : '#ffffff'};
+            border-left-color: #34a853;
+            border: 1px solid ${isDark ? '#444' : '#e0e0e0'};
+        }
+        .message-role {
+            font-weight: 500;
+            font-size: 12px;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+            color: ${isDark ? '#888' : '#666'};
+        }
+        .message-content {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .export-footer {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid ${isDark ? '#333' : '#e0e0e0'};
+            text-align: center;
+            font-size: 12px;
+            color: ${isDark ? '#888' : '#666'};
+        }
+        @media print {
+            body { margin: 0; }
+            .chat-container { max-width: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <div class="chat-header">
+            <div class="chat-title">${chatContent.title}</div>
+            <div class="chat-meta">
+                Exported on ${new Date(chatContent.exportDate).toLocaleString()} | 
+                ${chatContent.totalMessages} messages
+            </div>
+        </div>
+        
+        ${chatContent.messages.map(message => `
+            <div class="message ${message.role}">
+                <div class="message-role">${message.role}</div>
+                <div class="message-content">${this.escapeHtml(message.content)}</div>
+            </div>
+        `).join('')}
+        
+        <div class="export-footer">
+            Exported using Gemini Toolbox Export Chat Feature
+        </div>
+    </div>
+</body>
+</html>`;
+    }
+
+    formatAsMarkdown(chatContent) {
+        let markdown = `# ${chatContent.title}\n\n`;
+        markdown += `**Exported on:** ${new Date(chatContent.exportDate).toLocaleString()}\n`;
+        markdown += `**Total messages:** ${chatContent.totalMessages}\n\n`;
+        markdown += `---\n\n`;
+        
+        chatContent.messages.forEach(message => {
+            markdown += `### ${message.role.charAt(0).toUpperCase() + message.role.slice(1)}\n\n`;
+            markdown += `${message.content}\n\n`;
+            markdown += `---\n\n`;
+        });
+        
+        return markdown;
+    }
+
+    formatAsJSON(chatContent) {
+        return JSON.stringify(chatContent, null, 2);
+    }
+
+    formatAsText(chatContent) {
+        let text = `${chatContent.title}\n`;
+        text += `Exported on: ${new Date(chatContent.exportDate).toLocaleString()}\n`;
+        text += `Total messages: ${chatContent.totalMessages}\n\n`;
+        text += `==========================================\n\n`;
+        
+        chatContent.messages.forEach(message => {
+            text += `${message.role.toUpperCase()}:\n`;
+            text += `${message.content}\n\n`;
+            text += `------------------------------------------\n\n`;
+        });
+        
+        return text;
+    }
+
+    formatAsCSV(chatContent) {
+        let csv = 'Role,Content,Timestamp\n';
+        
+        chatContent.messages.forEach(message => {
+            const escapedContent = `"${message.content.replace(/"/g, '""')}"`;
+            csv += `${message.role},${escapedContent},${message.timestamp}\n`;
+        });
+        
+        return csv;
+    }
+
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    downloadFile(content, fileName, format) {
+        const blob = new Blob([content], { 
+            type: this.getMimeType(format) 
+        });
+        
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${fileName}.${format}`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    }
+
+    getMimeType(format) {
+        const mimeTypes = {
+            'pdf': 'application/pdf',
+            'html': 'text/html',
+            'md': 'text/markdown',
+            'json': 'application/json',
+            'txt': 'text/plain',
+            'csv': 'text/csv'
+        };
+        return mimeTypes[format] || 'text/plain';
+    }
+
+    showSuccessNotification() {
+        const notification = document.createElement('div');
+        notification.className = 'export-success-notification';
+        notification.innerHTML = `
+            <span>✅</span>
+            <span>Chat exported successfully!</span>
+        `;
+        
+        document.body.appendChild(notification);
+        
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.parentNode.removeChild(notification);
+            }
+        }, 3000);
+    }
+
+    showErrorNotification(message) {
+        const notification = document.createElement('div');
+        notification.className = 'export-success-notification';
+        notification.style.background = '#f44336';
+        notification.innerHTML = `
+            <span>❌</span>
+            <span>${message}</span>
+        `;
+        
+        document.body.appendChild(notification);
+        
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.parentNode.removeChild(notification);
+            }
+        }, 3000);
     }
 
     detectTheme() {

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Gemini Toolbox",
-  "version": "1.1",
-  "description": "Enhance Gemini with folders, prompt library, and word counter.",
+  "version": "1.2",
+  "description": "Enhance Gemini with folders, prompt library, word counter, and voice mode.",
   "permissions": [
     "storage",
     "activeTab",
@@ -11,7 +11,7 @@
   "content_scripts": [
     {
       "matches": ["*://gemini.google.com/*"],
-      "js": ["prompt_library.js", "word_counter.js", "voice_download.js", "injector.js"]
+      "js": ["prompt_library.js", "word_counter.js", "voice_mode.js", "injector.js"]
     }
   ],
   "icons": {
@@ -21,7 +21,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["prompt_library.html", "prompt_library.css", "prompt_library.js", "word_counter.js", "voice_download.js"],
+      "resources": ["prompt_library.html", "prompt_library.css", "prompt_library.js", "word_counter.js", "voice_mode.js"],
       "matches": ["*://gemini.google.com/*"]
     }
   ]

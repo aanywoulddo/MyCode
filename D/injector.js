@@ -17,7 +17,7 @@
     let currentTheme = 'light';
     let isModalOpen = false;
     let promptLibraryInstance;
-    let voiceDownloadInstance;
+    let voiceModeInstance;
 
     // State object to hold dynamic data, similar to the target's storage module.
     let state = {
@@ -469,14 +469,11 @@
                         </svg>
                         <span>Word Counter</span>
                     </div>
-                    <div id="voice-download-link" class="dropdown-item">
+                    <div id="voice-mode-link" class="dropdown-item">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" stroke="currentColor" stroke-width="2"/>
-                            <path d="M19 10v2a7 7 0 0 1-14 0v-2" stroke="currentColor" stroke-width="2"/>
-                            <line x1="12" y1="19" x2="12" y2="23" stroke="currentColor" stroke-width="2"/>
-                            <line x1="8" y1="23" x2="16" y2="23" stroke="currentColor" stroke-width="2"/>
+                            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3zm6 9v2a7 7 0 0 1-14 0v-2H3v2a8 8 0 0 0 7 7.93V21h2v-2.07A8 8 0 0 0 21 12v-2h-3z" fill="currentColor"/>
                         </svg>
-                        <span>Voice Download</span>
+                        <span>Voice Mode</span>
                     </div>
                     <div id="voice-settings-link" class="dropdown-item">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -1588,16 +1585,16 @@
         }
     }
 
-    // --- VOICE DOWNLOAD FUNCTIONALITY ---
+    // --- VOICE MODE FUNCTIONALITY ---
     
-    async function initializeVoiceDownload() {
-        if (!voiceDownloadInstance && window.VoiceDownload) {
+    async function initializeVoiceMode() {
+        if (!voiceModeInstance && window.VoiceMode) {
             try {
-                voiceDownloadInstance = new window.VoiceDownload(shadow);
-                console.log('Voice download initialized successfully');
-                voiceDownloadInstance.announcePresence();
+                voiceModeInstance = new window.VoiceMode(shadow);
+                console.log('Voice Mode initialized successfully');
+                voiceModeInstance.announcePresence();
             } catch (error) {
-                console.error('Error initializing voice download:', error);
+                console.error('Error initializing Voice Mode:', error);
             }
         }
     }
@@ -1631,7 +1628,7 @@
             const bulkDeleteLink = shadow.getElementById('bulk-delete-link');
             const promptLibraryLink = shadow.getElementById('prompt-library-link');
             const wordCounterLink = shadow.getElementById('word-counter-link');
-            const voiceDownloadLink = shadow.getElementById('voice-download-link');
+            const voiceModeLink = shadow.getElementById('voice-mode-link');
             const voiceSettingsLink = shadow.getElementById('voice-settings-link');
             const dropdownArrow = shadow.querySelector('.dropdown-arrow');
             
@@ -1677,10 +1674,10 @@
                 dropdownArrow.classList.remove('rotated');
             });
 
-            // Handle voice download link click
-            voiceDownloadLink.addEventListener('click', (e) => {
+            // Handle voice mode link click
+            voiceModeLink.addEventListener('click', (e) => {
                 e.stopPropagation();
-                initializeVoiceDownload();
+                initializeVoiceMode();
                 toolboxDropdown.style.display = 'none';
                 dropdownArrow.classList.remove('rotated');
             });
@@ -1688,14 +1685,14 @@
             // Handle voice settings link click
             voiceSettingsLink.addEventListener('click', (e) => {
                 e.stopPropagation();
-                if (voiceDownloadInstance) {
-                    voiceDownloadInstance.showVoiceSettings();
+                if (voiceModeInstance) {
+                    voiceModeInstance.showVoiceSettings();
                 } else {
-                    // Initialize voice download if not already done
-                    initializeVoiceDownload();
+                    // Initialize voice mode if not already done
+                    initializeVoiceMode();
                     setTimeout(() => {
-                        if (voiceDownloadInstance) {
-                            voiceDownloadInstance.showVoiceSettings();
+                        if (voiceModeInstance) {
+                            voiceModeInstance.showVoiceSettings();
                         }
                     }, 100);
                 }
@@ -1730,27 +1727,27 @@
                 }, 500);
             }
 
-            // Initialize VoiceDownload feature
-            if (typeof VoiceDownload !== 'undefined') {
+            // Initialize Voice Mode feature
+            if (typeof VoiceMode !== 'undefined') {
                 try {
-                    voiceDownloadInstance = new VoiceDownload(shadow);
-                    console.log('Voice download auto-initialized successfully');
+                    voiceModeInstance = new VoiceMode(shadow);
+                    console.log('Voice Mode auto-initialized successfully');
                     
                     // Auto-initialize to start monitoring for responses immediately
-                    voiceDownloadInstance.announcePresence();
+                    voiceModeInstance.announcePresence();
                 } catch (error) {
-                    console.error('Error auto-initializing voice download:', error);
+                    console.error('Error auto-initializing Voice Mode:', error);
                 }
             } else {
                 // Retry if the script hasn't loaded yet
                 setTimeout(() => {
-                    if (typeof VoiceDownload !== 'undefined') {
+                    if (typeof VoiceMode !== 'undefined') {
                         try {
-                            voiceDownloadInstance = new VoiceDownload(shadow);
-                            console.log('Voice download auto-initialized successfully (delayed)');
-                            voiceDownloadInstance.announcePresence();
+                            voiceModeInstance = new VoiceMode(shadow);
+                            console.log('Voice Mode auto-initialized successfully (delayed)');
+                            voiceModeInstance.announcePresence();
                         } catch (error) {
-                            console.error('Error auto-initializing voice download (delayed):', error);
+                            console.error('Error auto-initializing Voice Mode (delayed):', error);
                         }
                     }
                 }, 1000);

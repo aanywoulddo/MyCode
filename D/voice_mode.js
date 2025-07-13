@@ -1,7 +1,7 @@
 // ================================================================
-// VOICE_DOWNLOAD.JS - Fixed Voice Download Feature
+// VOICE_MODE.JS - Voice Mode Feature with Listen & Download
 // ================================================================
-class VoiceDownload {
+class VoiceMode {
     constructor(shadowRoot) {
         this.shadowRoot = shadowRoot;
         this.isInitialized = false;
@@ -14,14 +14,14 @@ class VoiceDownload {
             pitch: 1.0,
             volume: 1.0
         };
-        this.voiceButtonsAdded = new WeakSet();
+        this.processedResponses = new WeakSet();
         this.init();
     }
 
     async init() {
         if (this.isInitialized) return;
 
-        console.log('Initializing Voice Download feature...');
+        console.log('Initializing Voice Mode feature...');
 
         // Load settings from storage
         await this.loadSettings();
@@ -37,26 +37,25 @@ class VoiceDownload {
         // Start monitoring for new AI responses
         this.startResponseMonitoring();
 
-        // Check for existing responses
-        this.checkExistingResponses();
+        // Check for existing responses with delay to avoid duplicates
+        setTimeout(() => this.checkExistingResponses(), 1000);
 
         this.isInitialized = true;
-        console.log('Voice Download feature initialized');
+        console.log('Voice Mode feature initialized');
     }
 
     loadVoices() {
         this.voices = speechSynthesis.getVoices();
         if (this.voices.length === 0) {
-            // Retry after a short delay if voices aren't loaded yet
             setTimeout(() => this.loadVoices(), 100);
         }
     }
 
     async loadSettings() {
         try {
-            const result = await chrome.storage.local.get('voiceDownloadSettings');
-            if (result.voiceDownloadSettings) {
-                this.settings = { ...this.settings, ...result.voiceDownloadSettings };
+            const result = await chrome.storage.local.get('voiceModeSettings');
+            if (result.voiceModeSettings) {
+                this.settings = { ...this.settings, ...result.voiceModeSettings };
             }
         } catch (error) {
             console.log('Using default voice settings');
@@ -65,19 +64,19 @@ class VoiceDownload {
 
     async saveSettings() {
         try {
-            await chrome.storage.local.set({ voiceDownloadSettings: this.settings });
+            await chrome.storage.local.set({ voiceModeSettings: this.settings });
         } catch (error) {
             console.error('Failed to save voice settings:', error);
         }
     }
 
     startResponseMonitoring() {
-        // Use MutationObserver to detect new AI responses
         const observer = new MutationObserver((mutations) => {
             mutations.forEach((mutation) => {
                 mutation.addedNodes.forEach((node) => {
                     if (node.nodeType === Node.ELEMENT_NODE) {
-                        this.checkForNewResponses(node);
+                        // Add a small delay to ensure DOM is fully rendered
+                        setTimeout(() => this.checkForNewResponses(node), 500);
                     }
                 });
             });
@@ -90,113 +89,97 @@ class VoiceDownload {
     }
 
     checkExistingResponses() {
-        // Check all existing responses on the page
         const responseSelectors = [
             'message-content.model-response-text',
-            '.model-response-text',
+            '.model-response-text:not(.has-voice-buttons)',
             '.markdown.markdown-main-panel',
-            'model-response',
-            '[data-message-author-role="assistant"]',
-            '.conversation-turn.assistant',
-            '.response-content'
+            '[data-message-author-role="assistant"]'
         ];
 
         responseSelectors.forEach(selector => {
             const responses = document.querySelectorAll(selector);
             responses.forEach(response => {
-                if (!this.voiceButtonsAdded.has(response)) {
-                    this.addVoiceButtonToResponse(response);
+                if (!this.processedResponses.has(response) && !response.querySelector('.voice-mode-container')) {
+                    this.addVoiceButtonsToResponse(response);
                 }
             });
         });
     }
 
     checkForNewResponses(element) {
-        // Look for Gemini AI response containers
         const responseSelectors = [
             'message-content.model-response-text',
             '.model-response-text',
             '.markdown.markdown-main-panel',
-            'model-response',
-            '[data-message-author-role="assistant"]',
-            '.conversation-turn.assistant'
+            '[data-message-author-role="assistant"]'
         ];
 
+        // Check if element itself is a response
         responseSelectors.forEach(selector => {
-            const responses = element.querySelectorAll ? element.querySelectorAll(selector) : [];
-            responses.forEach(response => {
-                if (!this.voiceButtonsAdded.has(response)) {
-                    this.addVoiceButtonToResponse(response);
-                }
-            });
-
-            // Also check if the element itself matches
             if (element.matches && element.matches(selector)) {
-                if (!this.voiceButtonsAdded.has(element)) {
-                    this.addVoiceButtonToResponse(element);
+                if (!this.processedResponses.has(element) && !element.querySelector('.voice-mode-container')) {
+                    setTimeout(() => this.addVoiceButtonsToResponse(element), 100);
                 }
             }
         });
+
+        // Check child elements
+        responseSelectors.forEach(selector => {
+            const responses = element.querySelectorAll ? element.querySelectorAll(selector) : [];
+            responses.forEach(response => {
+                if (!this.processedResponses.has(response) && !response.querySelector('.voice-mode-container')) {
+                    setTimeout(() => this.addVoiceButtonsToResponse(response), 100);
+                }
+            });
+        });
     }
 
-    addVoiceButtonToResponse(responseElement) {
-        // Skip if button already exists
-        if (this.voiceButtonsAdded.has(responseElement)) return;
+    addVoiceButtonsToResponse(responseElement) {
+        // Double-check to prevent duplicates
+        if (this.processedResponses.has(responseElement) || responseElement.querySelector('.voice-mode-container')) {
+            return;
+        }
 
-        // Mark as processed
-        this.voiceButtonsAdded.add(responseElement);
+        // Mark as processed immediately
+        this.processedResponses.add(responseElement);
+        responseElement.classList.add('has-voice-buttons');
 
-        // Skip if this doesn't look like an AI response
         if (!this.isAIResponse(responseElement)) return;
 
-        console.log('Adding voice button to response:', responseElement);
+        console.log('Adding voice buttons to response:', responseElement);
 
-        const voiceButton = this.createVoiceButton(responseElement);
-
-        // Try to find a good place to insert the button
+        const voiceContainer = this.createVoiceContainer(responseElement);
         const insertionPoint = this.findInsertionPoint(responseElement);
+        
         if (insertionPoint) {
-            insertionPoint.appendChild(voiceButton);
+            insertionPoint.appendChild(voiceContainer);
         }
     }
 
     isAIResponse(element) {
-        // Check various indicators that this is an AI response
         const text = element.textContent || '';
-
-        // Skip very short responses
         if (text.trim().length < 10) return false;
 
         // Skip user messages
-        if (element.closest('[data-message-author-role="user"]')) return false;
-        if (element.closest('.user-message')) return false;
-        if (element.closest('.human-message')) return false;
+        if (element.closest('[data-message-author-role="user"]') ||
+            element.closest('.user-message') ||
+            element.closest('.human-message')) {
+            return false;
+        }
 
-        // Look for AI response indicators
-        const aiIndicators = [
-            'model-response',
-            'assistant-message',
-            'bot-message',
-            'ai-response',
-            'model-response-text'
-        ];
-
-        const hasAIIndicator = aiIndicators.some(indicator =>
-            element.classList.contains(indicator) ||
-            element.closest(`.${indicator}`) ||
-            element.hasAttribute('data-' + indicator.replace('-', '_'))
-        );
-
-        // For Gemini specifically, check for model response text
+        // Check for AI response indicators
         const isGeminiResponse = element.classList.contains('model-response-text') ||
                                 element.closest('.model-response-text') ||
                                 element.querySelector('.markdown.markdown-main-panel');
 
-        return hasAIIndicator || isGeminiResponse;
+        return isGeminiResponse;
     }
 
     findInsertionPoint(responseElement) {
-        // For Gemini, try to find the bottom of the response area
+        // Check if we already have a voice container
+        const existing = responseElement.querySelector('.voice-mode-container');
+        if (existing) return null;
+
         let insertionPoint = null;
 
         // Try to find existing action area
@@ -208,26 +191,26 @@ class VoiceDownload {
         ];
 
         for (const container of possibleContainers) {
-            if (container) {
+            if (container && !container.querySelector('.voice-mode-container')) {
                 insertionPoint = container;
                 break;
             }
         }
 
         if (!insertionPoint) {
-            // Create our own action container
+            // Create our own container
             insertionPoint = document.createElement('div');
-            insertionPoint.className = 'voice-download-actions';
+            insertionPoint.className = 'voice-mode-actions';
             insertionPoint.style.cssText = `
                 display: flex;
                 gap: 8px;
                 margin-top: 12px;
                 align-items: center;
                 padding: 8px 0;
-                border-top: 1px solid var(--gf-border-color, #e0e0e0);
+                border-top: 1px solid var(--border-color, #e0e0e0);
             `;
 
-            // For Gemini, append to the parent of the markdown content if it exists
+            // For Gemini, append to the parent of the markdown content
             const markdownContent = responseElement.querySelector('.markdown.markdown-main-panel');
             if (markdownContent && markdownContent.parentElement) {
                 markdownContent.parentElement.appendChild(insertionPoint);
@@ -239,30 +222,46 @@ class VoiceDownload {
         return insertionPoint;
     }
 
-    createVoiceButton(responseElement) {
+    createVoiceContainer(responseElement) {
+        const container = document.createElement('div');
+        container.className = 'voice-mode-container';
+        container.style.cssText = `
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        `;
+
+        // Create Listen button
+        const listenButton = this.createListenButton(responseElement);
+        
+        // Create Download button
+        const downloadButton = this.createDownloadButton(responseElement);
+
+        container.appendChild(listenButton);
+        container.appendChild(downloadButton);
+
+        return container;
+    }
+
+    createListenButton(responseElement) {
         const button = document.createElement('button');
-        button.className = 'voice-download-btn';
+        button.className = 'voice-mode-listen-btn';
+        
+        const isDarkTheme = document.body.classList.contains('dark-theme') || 
+                           document.body.classList.contains('dark_mode_toggled');
+
         button.innerHTML = `
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M12 2C11.4477 2 11 2.44772 11 3V11C11 11.5523 11.4477 12 12 12C12.5523 12 13 11.5523 13 11V3C13 2.44772 12.5523 2 12 2Z" fill="currentColor"/>
-                <path d="M8 6C7.44772 6 7 6.44772 7 7V11C7 11.5523 7.44772 12 8 12C8.55228 12 9 11.5523 9 11V7C9 6.44772 8.55228 6 8 6Z" fill="currentColor"/>
-                <path d="M16 6C15.4477 6 15 6.44772 15 7V11C15 11.5523 15.4477 12 16 12C16.5523 12 17 11.5523 17 11V7C17 6.44772 16.5523 6 16 6Z" fill="currentColor"/>
-                <path d="M4 9C3.44772 9 3 9.44772 3 10V11C3 11.5523 3.44772 12 4 12C4.55228 12 5 11.5523 5 11V10C5 9.44772 4.55228 9 4 9Z" fill="currentColor"/>
-                <path d="M20 9C19.4477 9 19 9.44772 19 10V11C19 11.5523 19.4477 12 20 12C20.5523 12 21 11.5523 21 11V10C21 9.44772 20.5523 9 20 9Z" fill="currentColor"/>
-                <rect x="6" y="14" width="12" height="8" rx="2" fill="currentColor"/>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M8 5v14l11-7z" fill="currentColor"/>
             </svg>
             <span>Listen</span>
         `;
-
-        // Detect theme and apply appropriate styles
-        const isDarkTheme = document.body.classList.contains('dark-theme') || 
-                           document.body.classList.contains('dark_mode_toggled');
 
         button.style.cssText = `
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            padding: 6px 12px;
+            padding: 6px 14px;
             border: 1px solid ${isDarkTheme ? '#5f6368' : '#dadce0'};
             border-radius: 20px;
             background: transparent;
@@ -272,10 +271,61 @@ class VoiceDownload {
             transition: all 0.2s ease;
             font-family: 'Google Sans', Roboto, sans-serif;
             white-space: nowrap;
-            margin-right: 8px;
         `;
 
-        // Add hover effects
+        // Hover effects
+        button.addEventListener('mouseenter', () => {
+            button.style.backgroundColor = isDarkTheme ? 'rgba(138, 180, 248, 0.08)' : 'rgba(26, 115, 232, 0.08)';
+            button.style.borderColor = isDarkTheme ? '#8ab4f8' : '#1a73e8';
+        });
+
+        button.addEventListener('mouseleave', () => {
+            if (!button.classList.contains('playing')) {
+                button.style.backgroundColor = 'transparent';
+                button.style.borderColor = isDarkTheme ? '#5f6368' : '#dadce0';
+            }
+        });
+
+        // Click handler
+        button.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.handleListenClick(responseElement, button);
+        });
+
+        return button;
+    }
+
+    createDownloadButton(responseElement) {
+        const button = document.createElement('button');
+        button.className = 'voice-mode-download-btn';
+        button.title = 'Download as audio';
+        
+        const isDarkTheme = document.body.classList.contains('dark-theme') || 
+                           document.body.classList.contains('dark_mode_toggled');
+
+        button.innerHTML = `
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <polyline points="7 10 12 15 17 10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <line x1="12" y1="15" x2="12" y2="3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+        `;
+
+        button.style.cssText = `
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+            border: 1px solid ${isDarkTheme ? '#5f6368' : '#dadce0'};
+            border-radius: 50%;
+            background: transparent;
+            color: ${isDarkTheme ? '#8ab4f8' : '#1a73e8'};
+            cursor: pointer;
+            transition: all 0.2s ease;
+        `;
+
+        // Hover effects
         button.addEventListener('mouseenter', () => {
             button.style.backgroundColor = isDarkTheme ? 'rgba(138, 180, 248, 0.08)' : 'rgba(26, 115, 232, 0.08)';
             button.style.borderColor = isDarkTheme ? '#8ab4f8' : '#1a73e8';
@@ -286,23 +336,23 @@ class VoiceDownload {
             button.style.borderColor = isDarkTheme ? '#5f6368' : '#dadce0';
         });
 
-        // Add click handler
+        // Click handler
         button.addEventListener('click', (e) => {
             e.stopPropagation();
-            this.handleVoiceButtonClick(responseElement, button);
+            this.handleDownloadClick(responseElement);
         });
 
         return button;
     }
 
-    handleVoiceButtonClick(responseElement, button) {
+    handleListenClick(responseElement, button) {
         const text = this.extractTextFromResponse(responseElement);
         if (!text) {
             alert('Could not extract text from this response.');
             return;
         }
 
-        // If already playing, stop
+        // If already playing this button, stop
         if (this.isPlaying && button.classList.contains('playing')) {
             this.stopSpeaking();
             return;
@@ -313,24 +363,124 @@ class VoiceDownload {
             this.stopSpeaking();
         }
 
-        // Start playing this text
+        // Start playing
         this.playText(text, button);
     }
 
+    handleDownloadClick(responseElement) {
+        const text = this.extractTextFromResponse(responseElement);
+        if (!text) {
+            alert('Could not extract text from this response.');
+            return;
+        }
+
+        // Use Web Speech API to generate audio blob
+        this.generateAndDownloadAudio(text);
+    }
+
+    async generateAndDownloadAudio(text) {
+        try {
+            // Show loading state
+            const downloadButtons = document.querySelectorAll('.voice-mode-download-btn');
+            downloadButtons.forEach(btn => {
+                btn.disabled = true;
+                btn.style.opacity = '0.5';
+            });
+
+            // Create a more sophisticated approach using MediaRecorder
+            const utterance = new SpeechSynthesisUtterance(text);
+            
+            if (this.voices.length > 0) {
+                utterance.voice = this.voices[this.settings.selectedVoice];
+            }
+            utterance.rate = this.settings.rate;
+            utterance.pitch = this.settings.pitch;
+            utterance.volume = this.settings.volume;
+
+            // For now, we'll create a text file with the content and settings
+            // (Full audio generation would require a server-side API)
+            const audioSettings = {
+                text: text,
+                voice: this.voices[this.settings.selectedVoice]?.name || 'Default',
+                rate: this.settings.rate,
+                pitch: this.settings.pitch,
+                volume: this.settings.volume
+            };
+
+            const blob = new Blob([JSON.stringify(audioSettings, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `gemini-response-${Date.now()}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            // Show info message
+            this.showToast('Downloaded response data. Note: Audio file generation requires additional setup.');
+
+        } catch (error) {
+            console.error('Download error:', error);
+            this.showToast('Download failed. Please try again.');
+        } finally {
+            // Reset button states
+            const downloadButtons = document.querySelectorAll('.voice-mode-download-btn');
+            downloadButtons.forEach(btn => {
+                btn.disabled = false;
+                btn.style.opacity = '1';
+            });
+        }
+    }
+
+    showToast(message) {
+        const toast = document.createElement('div');
+        toast.className = 'voice-mode-toast';
+        toast.textContent = message;
+        
+        const isDarkTheme = document.body.classList.contains('dark-theme') || 
+                           document.body.classList.contains('dark_mode_toggled');
+
+        toast.style.cssText = `
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: ${isDarkTheme ? '#2d2d2f' : '#323232'};
+            color: #fff;
+            padding: 12px 24px;
+            border-radius: 20px;
+            font-size: 14px;
+            z-index: 10000;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            font-family: 'Google Sans', Roboto, sans-serif;
+        `;
+
+        document.body.appendChild(toast);
+        
+        // Animate in
+        setTimeout(() => toast.style.opacity = '1', 10);
+        
+        // Remove after 3 seconds
+        setTimeout(() => {
+            toast.style.opacity = '0';
+            setTimeout(() => toast.remove(), 300);
+        }, 3000);
+    }
+
     extractTextFromResponse(responseElement) {
-        // Clone the element to avoid modifying the live DOM
         const clone = responseElement.cloneNode(true);
         
-        // Remove known non-content elements
+        // Remove non-content elements
         const selectorsToRemove = [
             'button', 
             '.response-actions', 
             '.message-actions', 
-            '.action-buttons',
-            '.voice-download-btn',
-            '.voice-download-actions',
+            '.voice-mode-container',
+            '.voice-mode-actions',
             '.code-block-header',
-            'pre', // Remove code blocks
+            'pre',
             'code',
             '.copy-code-button'
         ];
@@ -345,7 +495,6 @@ class VoiceDownload {
             return markdownContent.innerText || markdownContent.textContent || '';
         }
         
-        // Fallback to full content
         return clone.innerText || clone.textContent || '';
     }
 
@@ -365,12 +514,16 @@ class VoiceDownload {
         // Update button state
         button.classList.add('playing');
         button.innerHTML = `
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <rect x="6" y="4" width="4" height="16" rx="1" fill="currentColor"/>
                 <rect x="14" y="4" width="4" height="16" rx="1" fill="currentColor"/>
             </svg>
             <span>Stop</span>
         `;
+        
+        const isDarkTheme = document.body.classList.contains('dark-theme') || 
+                           document.body.classList.contains('dark_mode_toggled');
+        button.style.backgroundColor = isDarkTheme ? 'rgba(138, 180, 248, 0.08)' : 'rgba(26, 115, 232, 0.08)';
         
         utterance.onstart = () => {
             this.isPlaying = true;
@@ -405,28 +558,22 @@ class VoiceDownload {
     resetButton(button) {
         button.classList.remove('playing');
         button.innerHTML = `
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M12 2C11.4477 2 11 2.44772 11 3V11C11 11.5523 11.4477 12 12 12C12.5523 12 13 11.5523 13 11V3C13 2.44772 12.5523 2 12 2Z" fill="currentColor"/>
-                <path d="M8 6C7.44772 6 7 6.44772 7 7V11C7 11.5523 7.44772 12 8 12C8.55228 12 9 11.5523 9 11V7C9 6.44772 8.55228 6 8 6Z" fill="currentColor"/>
-                <path d="M16 6C15.4477 6 15 6.44772 15 7V11C15 11.5523 15.4477 12 16 12C16.5523 12 17 11.5523 17 11V7C17 6.44772 16.5523 6 16 6Z" fill="currentColor"/>
-                <path d="M4 9C3.44772 9 3 9.44772 3 10V11C3 11.5523 3.44772 12 4 12C4.55228 12 5 11.5523 5 11V10C5 9.44772 4.55228 9 4 9Z" fill="currentColor"/>
-                <path d="M20 9C19.4477 9 19 9.44772 19 10V11C19 11.5523 19.4477 12 20 12C20.5523 12 21 11.5523 21 11V10C21 9.44772 20.5523 9 20 9Z" fill="currentColor"/>
-                <rect x="6" y="14" width="12" height="8" rx="2" fill="currentColor"/>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M8 5v14l11-7z" fill="currentColor"/>
             </svg>
             <span>Listen</span>
         `;
+        button.style.backgroundColor = 'transparent';
     }
 
-    // Voice settings modal
+    // Voice settings modal (same as before)
     showVoiceSettings() {
-        // Check if modal already exists
         const existingModal = this.shadowRoot.getElementById('voice-settings-modal');
         if (existingModal) {
             existingModal.style.display = 'block';
             return;
         }
 
-        // Create modal HTML
         const modalHTML = `
             <div id="voice-settings-modal" class="modal">
                 <div class="modal-content" style="width: 500px;">
@@ -470,15 +617,11 @@ class VoiceDownload {
             </div>
         `;
 
-        // Add modal to shadow DOM
         const modalContainer = document.createElement('div');
         modalContainer.innerHTML = modalHTML;
         this.shadowRoot.appendChild(modalContainer.firstElementChild);
 
-        // Add styles
         this.addSettingsStyles();
-
-        // Add event listeners
         this.addSettingsEventListeners();
     }
 
@@ -526,18 +669,15 @@ class VoiceDownload {
     addSettingsEventListeners() {
         const modal = this.shadowRoot.getElementById('voice-settings-modal');
         
-        // Close button
         modal.querySelector('#close-voice-settings').onclick = () => {
             modal.style.display = 'none';
         };
         
-        // Voice select
         modal.querySelector('#voice-select').onchange = (e) => {
             this.settings.selectedVoice = parseInt(e.target.value);
             this.saveSettings();
         };
         
-        // Sliders
         ['rate', 'pitch', 'volume'].forEach(param => {
             const slider = modal.querySelector(`#${param}-slider`);
             const value = modal.querySelector(`#${param}-value`);
@@ -550,7 +690,6 @@ class VoiceDownload {
             };
         });
         
-        // Test voice button
         modal.querySelector('#test-voice-btn').onclick = () => {
             const testText = "Hello! This is a test of the voice settings. How does this sound?";
             const utterance = new SpeechSynthesisUtterance(testText);
@@ -566,7 +705,6 @@ class VoiceDownload {
             speechSynthesis.speak(utterance);
         };
         
-        // Reset button
         modal.querySelector('#reset-voice-btn').onclick = () => {
             this.settings = {
                 selectedVoice: 0,
@@ -576,7 +714,6 @@ class VoiceDownload {
             };
             this.saveSettings();
             
-            // Update UI
             modal.querySelector('#voice-select').value = '0';
             modal.querySelector('#rate-slider').value = '1';
             modal.querySelector('#rate-value').textContent = '1';
@@ -587,13 +724,12 @@ class VoiceDownload {
         };
     }
 
-    // Method to show this is active (for debugging)
     announcePresence() {
-        console.log('Voice Download feature is active');
+        console.log('Voice Mode feature is active');
     }
 }
 
 // Make available globally
 if (typeof window !== 'undefined') {
-    window.VoiceDownload = VoiceDownload;
+    window.VoiceMode = VoiceMode;
 }

@@ -1,5 +1,5 @@
 // ================================================================
-// VOICE_MODE.JS - Voice Mode Feature with Listen & Download
+// VOICE_MODE.JS - Voice Mode Feature with Listen & Download (Fixed)
 // ================================================================
 class VoiceMode {
     constructor(shadowRoot) {
@@ -15,6 +15,10 @@ class VoiceMode {
             volume: 1.0
         };
         this.processedResponses = new WeakSet();
+        this.audioContext = null;
+        this.mediaRecorder = null;
+        this.currentButton = null;
+        this.responseCounter = 0; // Counter to track processed responses
         this.init();
     }
 
@@ -22,6 +26,13 @@ class VoiceMode {
         if (this.isInitialized) return;
 
         console.log('Initializing Voice Mode feature...');
+
+        // Initialize audio context for recording
+        try {
+            this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        } catch (e) {
+            console.error('Failed to create audio context:', e);
+        }
 
         // Load settings from storage
         await this.loadSettings();
@@ -91,7 +102,7 @@ class VoiceMode {
     checkExistingResponses() {
         const responseSelectors = [
             'message-content.model-response-text',
-            '.model-response-text:not(.has-voice-buttons)',
+            '.model-response-text',
             '.markdown.markdown-main-panel',
             '[data-message-author-role="assistant"]'
         ];
@@ -99,9 +110,7 @@ class VoiceMode {
         responseSelectors.forEach(selector => {
             const responses = document.querySelectorAll(selector);
             responses.forEach(response => {
-                if (!this.processedResponses.has(response) && !response.querySelector('.voice-mode-container')) {
-                    this.addVoiceButtonsToResponse(response);
-                }
+                this.addVoiceButtonsToResponse(response);
             });
         });
     }
@@ -117,9 +126,7 @@ class VoiceMode {
         // Check if element itself is a response
         responseSelectors.forEach(selector => {
             if (element.matches && element.matches(selector)) {
-                if (!this.processedResponses.has(element) && !element.querySelector('.voice-mode-container')) {
-                    setTimeout(() => this.addVoiceButtonsToResponse(element), 100);
-                }
+                setTimeout(() => this.addVoiceButtonsToResponse(element), 100);
             }
         });
 
@@ -127,31 +134,43 @@ class VoiceMode {
         responseSelectors.forEach(selector => {
             const responses = element.querySelectorAll ? element.querySelectorAll(selector) : [];
             responses.forEach(response => {
-                if (!this.processedResponses.has(response) && !response.querySelector('.voice-mode-container')) {
-                    setTimeout(() => this.addVoiceButtonsToResponse(response), 100);
-                }
+                setTimeout(() => this.addVoiceButtonsToResponse(response), 100);
             });
         });
     }
 
     addVoiceButtonsToResponse(responseElement) {
-        // Double-check to prevent duplicates
-        if (this.processedResponses.has(responseElement) || responseElement.querySelector('.voice-mode-container')) {
+        // Check if we've already processed this element
+        if (this.processedResponses.has(responseElement)) {
             return;
         }
 
-        // Mark as processed immediately
-        this.processedResponses.add(responseElement);
-        responseElement.classList.add('has-voice-buttons');
+        // Check if buttons already exist (more thorough check)
+        const existingContainer = responseElement.querySelector('.voice-mode-container') ||
+                                responseElement.parentElement?.querySelector('.voice-mode-container') ||
+                                responseElement.closest('div')?.querySelector('.voice-mode-container');
+        
+        if (existingContainer) {
+            this.processedResponses.add(responseElement);
+            return;
+        }
 
         if (!this.isAIResponse(responseElement)) return;
 
-        console.log('Adding voice buttons to response:', responseElement);
+        // Mark as processed immediately to prevent duplicates
+        this.processedResponses.add(responseElement);
+        
+        // Assign unique ID for tracking
+        if (!responseElement.dataset.voiceId) {
+            responseElement.dataset.voiceId = `voice-${++this.responseCounter}`;
+        }
+
+        console.log('Adding voice buttons to response:', responseElement.dataset.voiceId);
 
         const voiceContainer = this.createVoiceContainer(responseElement);
         const insertionPoint = this.findInsertionPoint(responseElement);
         
-        if (insertionPoint) {
+        if (insertionPoint && voiceContainer) {
             insertionPoint.appendChild(voiceContainer);
         }
     }
@@ -176,9 +195,11 @@ class VoiceMode {
     }
 
     findInsertionPoint(responseElement) {
-        // Check if we already have a voice container
-        const existing = responseElement.querySelector('.voice-mode-container');
-        if (existing) return null;
+        // First check if we already have a voice container in the parent tree
+        const parentCheck = responseElement.closest('.message') || responseElement.parentElement;
+        if (parentCheck?.querySelector('.voice-mode-container, .voice-mode-actions')) {
+            return null; // Already has voice controls
+        }
 
         let insertionPoint = null;
 
@@ -187,7 +208,8 @@ class VoiceMode {
             responseElement.querySelector('.response-footer'),
             responseElement.querySelector('.message-actions'),
             responseElement.querySelector('.response-actions'),
-            responseElement.parentElement?.querySelector('.response-footer')
+            responseElement.parentElement?.querySelector('.response-footer'),
+            responseElement.parentElement?.querySelector('.message-actions')
         ];
 
         for (const container of possibleContainers) {
@@ -198,9 +220,10 @@ class VoiceMode {
         }
 
         if (!insertionPoint) {
-            // Create our own container
+            // Create our own container with unique class to prevent duplicates
             insertionPoint = document.createElement('div');
             insertionPoint.className = 'voice-mode-actions';
+            insertionPoint.dataset.voiceControls = 'true';
             insertionPoint.style.cssText = `
                 display: flex;
                 gap: 8px;
@@ -213,7 +236,20 @@ class VoiceMode {
             // For Gemini, append to the parent of the markdown content
             const markdownContent = responseElement.querySelector('.markdown.markdown-main-panel');
             if (markdownContent && markdownContent.parentElement) {
-                markdownContent.parentElement.appendChild(insertionPoint);
+                // Check if actions container already exists in parent
+                const existingActions = markdownContent.parentElement.querySelector('[data-voice-controls="true"]');
+                if (!existingActions) {
+                    markdownContent.parentElement.appendChild(insertionPoint);
+                } else {
+                    return null;
+                }
+            } else if (responseElement.parentElement) {
+                const existingActions = responseElement.parentElement.querySelector('[data-voice-controls="true"]');
+                if (!existingActions) {
+                    responseElement.parentElement.appendChild(insertionPoint);
+                } else {
+                    return null;
+                }
             } else {
                 responseElement.appendChild(insertionPoint);
             }
@@ -225,6 +261,7 @@ class VoiceMode {
     createVoiceContainer(responseElement) {
         const container = document.createElement('div');
         container.className = 'voice-mode-container';
+        container.dataset.responseId = responseElement.dataset.voiceId;
         container.style.cssText = `
             display: inline-flex;
             align-items: center;
@@ -246,6 +283,7 @@ class VoiceMode {
     createListenButton(responseElement) {
         const button = document.createElement('button');
         button.className = 'voice-mode-listen-btn';
+        button.dataset.responseId = responseElement.dataset.voiceId;
         
         const isDarkTheme = document.body.classList.contains('dark-theme') || 
                            document.body.classList.contains('dark_mode_toggled');
@@ -298,7 +336,8 @@ class VoiceMode {
     createDownloadButton(responseElement) {
         const button = document.createElement('button');
         button.className = 'voice-mode-download-btn';
-        button.title = 'Download as audio';
+        button.dataset.responseId = responseElement.dataset.voiceId;
+        button.title = 'Download as audio file';
         
         const isDarkTheme = document.body.classList.contains('dark-theme') || 
                            document.body.classList.contains('dark_mode_toggled');
@@ -339,7 +378,7 @@ class VoiceMode {
         // Click handler
         button.addEventListener('click', (e) => {
             e.stopPropagation();
-            this.handleDownloadClick(responseElement);
+            this.handleDownloadClick(responseElement, button);
         });
 
         return button;
@@ -348,7 +387,7 @@ class VoiceMode {
     handleListenClick(responseElement, button) {
         const text = this.extractTextFromResponse(responseElement);
         if (!text) {
-            alert('Could not extract text from this response.');
+            this.showToast('Could not extract text from this response.');
             return;
         }
 
@@ -367,73 +406,201 @@ class VoiceMode {
         this.playText(text, button);
     }
 
-    handleDownloadClick(responseElement) {
+    async handleDownloadClick(responseElement, button) {
         const text = this.extractTextFromResponse(responseElement);
         if (!text) {
-            alert('Could not extract text from this response.');
+            this.showToast('Could not extract text from this response.');
             return;
         }
 
-        // Use Web Speech API to generate audio blob
-        this.generateAndDownloadAudio(text);
-    }
+        // Show loading state
+        button.disabled = true;
+        button.style.opacity = '0.5';
+        const originalTitle = button.title;
+        button.title = 'Generating audio...';
 
-    async generateAndDownloadAudio(text) {
         try {
-            // Show loading state
-            const downloadButtons = document.querySelectorAll('.voice-mode-download-btn');
-            downloadButtons.forEach(btn => {
-                btn.disabled = true;
-                btn.style.opacity = '0.5';
-            });
-
-            // Create a more sophisticated approach using MediaRecorder
-            const utterance = new SpeechSynthesisUtterance(text);
+            // Try to generate actual audio using a more reliable method
+            const audioBlob = await this.generateAudioBlobV2(text);
             
-            if (this.voices.length > 0) {
-                utterance.voice = this.voices[this.settings.selectedVoice];
+            if (audioBlob) {
+                // Download the audio file
+                const url = URL.createObjectURL(audioBlob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `gemini-response-${responseElement.dataset.voiceId || Date.now()}.webm`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                
+                this.showToast('Audio downloaded successfully!');
+            } else {
+                // Fallback: Create a data URL with speech synthesis instructions
+                this.downloadSpeechInstructions(text, responseElement.dataset.voiceId);
             }
-            utterance.rate = this.settings.rate;
-            utterance.pitch = this.settings.pitch;
-            utterance.volume = this.settings.volume;
-
-            // For now, we'll create a text file with the content and settings
-            // (Full audio generation would require a server-side API)
-            const audioSettings = {
-                text: text,
-                voice: this.voices[this.settings.selectedVoice]?.name || 'Default',
-                rate: this.settings.rate,
-                pitch: this.settings.pitch,
-                volume: this.settings.volume
-            };
-
-            const blob = new Blob([JSON.stringify(audioSettings, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `gemini-response-${Date.now()}.json`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-
-            // Show info message
-            this.showToast('Downloaded response data. Note: Audio file generation requires additional setup.');
-
         } catch (error) {
             console.error('Download error:', error);
-            this.showToast('Download failed. Please try again.');
+            this.showToast('Audio generation failed. Downloading speech instructions instead.');
+            this.downloadSpeechInstructions(text, responseElement.dataset.voiceId);
         } finally {
-            // Reset button states
-            const downloadButtons = document.querySelectorAll('.voice-mode-download-btn');
-            downloadButtons.forEach(btn => {
-                btn.disabled = false;
-                btn.style.opacity = '1';
-            });
+            // Reset button state
+            button.disabled = false;
+            button.style.opacity = '1';
+            button.title = originalTitle;
         }
     }
 
+    async generateAudioBlobV2(text) {
+        return new Promise((resolve) => {
+            try {
+                // Check browser support
+                if (!this.audioContext || !window.MediaRecorder) {
+                    console.warn('Audio recording not supported');
+                    resolve(null);
+                    return;
+                }
+
+                const utterance = new SpeechSynthesisUtterance(text);
+                
+                // Apply voice settings
+                if (this.voices.length > 0 && this.voices[this.settings.selectedVoice]) {
+                    utterance.voice = this.voices[this.settings.selectedVoice];
+                }
+                utterance.rate = this.settings.rate;
+                utterance.pitch = this.settings.pitch;
+                utterance.volume = this.settings.volume;
+
+                // Create audio destination
+                const destination = this.audioContext.createMediaStreamDestination();
+                const mediaRecorder = new MediaRecorder(destination.stream, {
+                    mimeType: 'audio/webm;codecs=opus'
+                });
+
+                const chunks = [];
+                
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0) {
+                        chunks.push(event.data);
+                    }
+                };
+                
+                mediaRecorder.onstop = () => {
+                    if (chunks.length > 0) {
+                        const blob = new Blob(chunks, { type: 'audio/webm' });
+                        resolve(blob);
+                    } else {
+                        resolve(null);
+                    }
+                };
+
+                // Set up speech synthesis events
+                utterance.onstart = () => {
+                    try {
+                        mediaRecorder.start();
+                    } catch (e) {
+                        console.error('Failed to start recording:', e);
+                        resolve(null);
+                    }
+                };
+
+                utterance.onend = () => {
+                    setTimeout(() => {
+                        if (mediaRecorder.state === 'recording') {
+                            mediaRecorder.stop();
+                        }
+                    }, 500);
+                };
+
+                utterance.onerror = (error) => {
+                    console.error('Speech synthesis error:', error);
+                    if (mediaRecorder.state === 'recording') {
+                        mediaRecorder.stop();
+                    }
+                    resolve(null);
+                };
+
+                // Start speech synthesis
+                speechSynthesis.speak(utterance);
+
+                // Timeout fallback
+                setTimeout(() => {
+                    if (mediaRecorder.state === 'recording') {
+                        mediaRecorder.stop();
+                    }
+                    if (chunks.length === 0) {
+                        resolve(null);
+                    }
+                }, 60000); // 1 minute timeout
+
+            } catch (error) {
+                console.error('Error in generateAudioBlobV2:', error);
+                resolve(null);
+            }
+        });
+    }
+
+    downloadSpeechInstructions(text, responseId) {
+        const instructions = `GEMINI RESPONSE - Text-to-Speech Package
+=========================================
+Response ID: ${responseId || 'unknown'}
+Generated: ${new Date().toLocaleString()}
+
+SPEECH SETTINGS:
+================
+Voice: ${this.voices[this.settings.selectedVoice]?.name || 'Default System Voice'}
+Language: ${this.voices[this.settings.selectedVoice]?.lang || 'en-US'}
+Speed: ${this.settings.rate}x
+Pitch: ${this.settings.pitch}
+Volume: ${this.settings.volume}
+
+INSTRUCTIONS:
+=============
+1. Copy the text content below
+2. Use any text-to-speech service:
+   - Google Cloud Text-to-Speech
+   - Amazon Polly
+   - Microsoft Azure Speech
+   - Or your system's built-in TTS
+
+3. Apply the settings above for best results
+
+ALTERNATIVE METHODS:
+===================
+- Online TTS: https://ttsmaker.com or https://www.naturalreaders.com
+- Browser: Use Web Speech API with the provided settings
+- Mobile: Use device accessibility features
+
+=========================================
+TEXT CONTENT:
+=========================================
+
+${text}
+
+=========================================
+End of Package
+`;
+
+        const blob = new Blob([instructions], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `gemini-tts-${responseId || Date.now()}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        this.showToast('Downloaded TTS instructions package.');
+    }
+
     showToast(message) {
+        // Remove any existing toast
+        const existingToast = document.querySelector('.voice-mode-toast');
+        if (existingToast) {
+            existingToast.remove();
+        }
+
         const toast = document.createElement('div');
         toast.className = 'voice-mode-toast';
         toast.textContent = message;
@@ -455,6 +622,9 @@ class VoiceMode {
             opacity: 0;
             transition: opacity 0.3s ease;
             font-family: 'Google Sans', Roboto, sans-serif;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            max-width: 300px;
+            text-align: center;
         `;
 
         document.body.appendChild(toast);
@@ -465,7 +635,11 @@ class VoiceMode {
         // Remove after 3 seconds
         setTimeout(() => {
             toast.style.opacity = '0';
-            setTimeout(() => toast.remove(), 300);
+            setTimeout(() => {
+                if (toast.parentNode) {
+                    toast.remove();
+                }
+            }, 300);
         }, 3000);
     }
 
@@ -482,7 +656,9 @@ class VoiceMode {
             '.code-block-header',
             'pre',
             'code',
-            '.copy-code-button'
+            '.copy-code-button',
+            'script',
+            'style'
         ];
         
         selectorsToRemove.forEach(selector => {
@@ -504,8 +680,8 @@ class VoiceMode {
         const utterance = new SpeechSynthesisUtterance(text);
         
         // Apply settings
-        if (this.voices.length > 0) {
-            utterance.voice = this.voices[this.settings.selectedVoice] || this.voices[0];
+        if (this.voices.length > 0 && this.voices[this.settings.selectedVoice]) {
+            utterance.voice = this.voices[this.settings.selectedVoice];
         }
         utterance.rate = this.settings.rate;
         utterance.pitch = this.settings.pitch;
@@ -541,6 +717,7 @@ class VoiceMode {
             this.resetButton(button);
             this.isPlaying = false;
             this.currentButton = null;
+            this.showToast('Speech synthesis failed. Please try again.');
         };
         
         speechSynthesis.speak(utterance);
@@ -566,11 +743,10 @@ class VoiceMode {
         button.style.backgroundColor = 'transparent';
     }
 
-    // Voice settings modal (same as before)
+    // Settings modal remains the same but simplified
     showVoiceSettings() {
-        const existingModal = this.shadowRoot.getElementById('voice-settings-modal');
-        if (existingModal) {
-            existingModal.style.display = 'block';
+        if (this.shadowRoot.getElementById('voice-settings-modal')) {
+            this.shadowRoot.getElementById('voice-settings-modal').style.display = 'block';
             return;
         }
 
@@ -621,49 +797,7 @@ class VoiceMode {
         modalContainer.innerHTML = modalHTML;
         this.shadowRoot.appendChild(modalContainer.firstElementChild);
 
-        this.addSettingsStyles();
         this.addSettingsEventListeners();
-    }
-
-    addSettingsStyles() {
-        const styles = document.createElement('style');
-        styles.textContent = `
-            .settings-group {
-                margin-bottom: 20px;
-            }
-            
-            .settings-group label {
-                display: block;
-                margin-bottom: 8px;
-                font-weight: 500;
-                color: var(--gf-text-primary);
-            }
-            
-            .settings-select {
-                width: 100%;
-                padding: 8px 12px;
-                border: 1px solid var(--gf-border-color);
-                border-radius: 6px;
-                background: var(--gf-bg-input);
-                color: var(--gf-text-primary);
-                font-size: 14px;
-            }
-            
-            input[type="range"] {
-                width: 100%;
-                margin-top: 8px;
-            }
-            
-            .settings-actions {
-                display: flex;
-                gap: 12px;
-                margin-top: 24px;
-                padding-top: 24px;
-                border-top: 1px solid var(--gf-border-color);
-            }
-        `;
-        
-        this.shadowRoot.appendChild(styles);
     }
 
     addSettingsEventListeners() {
@@ -694,7 +828,7 @@ class VoiceMode {
             const testText = "Hello! This is a test of the voice settings. How does this sound?";
             const utterance = new SpeechSynthesisUtterance(testText);
             
-            if (this.voices.length > 0) {
+            if (this.voices.length > 0 && this.voices[this.settings.selectedVoice]) {
                 utterance.voice = this.voices[this.settings.selectedVoice];
             }
             utterance.rate = this.settings.rate;
@@ -714,22 +848,16 @@ class VoiceMode {
             };
             this.saveSettings();
             
+            // Update UI
             modal.querySelector('#voice-select').value = '0';
-            modal.querySelector('#rate-slider').value = '1';
-            modal.querySelector('#rate-value').textContent = '1';
-            modal.querySelector('#pitch-slider').value = '1';
-            modal.querySelector('#pitch-value').textContent = '1';
-            modal.querySelector('#volume-slider').value = '1';
-            modal.querySelector('#volume-value').textContent = '1';
+            modal.querySelector('#rate-slider').value = '1.0';
+            modal.querySelector('#rate-value').textContent = '1.0';
+            modal.querySelector('#pitch-slider').value = '1.0';
+            modal.querySelector('#pitch-value').textContent = '1.0';
+            modal.querySelector('#volume-slider').value = '1.0';
+            modal.querySelector('#volume-value').textContent = '1.0';
         };
     }
-
-    announcePresence() {
-        console.log('Voice Mode feature is active');
-    }
 }
 
-// Make available globally
-if (typeof window !== 'undefined') {
-    window.VoiceMode = VoiceMode;
-}
+export default VoiceMode;

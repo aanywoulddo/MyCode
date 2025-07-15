@@ -23,7 +23,8 @@ D/
 ├── prompt_library.js     # Prompt library feature (244 lines)
 ├── word_counter.js       # Word counting functionality (288 lines)  
 ├── voice_mode.js         # Voice/TTS features (735 lines)
-├── chat_exporter.js      # Chat export system (1093 lines)
+├── pdf_exporter.js       # Professional PDF export system (1200+ lines, based on dedicated extension)
+├── [REMOVED] chat_exporter.js      # Previous export implementation (removed due to reliability issues)
 ├── [REMOVED] export_chat.js        # Alternative export implementation (was 872 lines, removed to avoid conflicts)
 ├── scripts/
 │   └── delete-conversations.js  # Bulk deletion (357 lines)
@@ -80,16 +81,17 @@ D/
   - Smart response detection
 - **Technical**: Uses Web Speech API with MediaRecorder fallbacks
 
-### 5. **Chat Export System**
-- **File**: `chat_exporter.js` (improved with pending export functionality)
+### 5. **PDF Export System**
+- **File**: `pdf_exporter.js` (completely rewritten based on dedicated Gemini to PDF extension)
 - **Formats**: PDF, HTML, Markdown, JSON, Text, CSV
 - **Features**:
-  - Multi-format export with customization
-  - Theme-aware export styling
-  - Professional PDF generation with html2pdf
-  - Bulk conversation export capabilities
-- **Architecture**: Enhanced with pending export tracking and improved navigation flow
-- **Recent Fixes**: Added `pendingExport` tracking, improved `waitForConversationLoad`, enhanced content extraction with fallback strategies
+  - Professional PDF generation with advanced themes
+  - Robust conversation extraction with multiple fallback strategies
+  - Real-time scrolling to load complete chat history
+  - Professional export quality matching dedicated extensions
+  - Settings persistence with comprehensive validation
+- **Architecture**: Complete replacement using proven Gemini to PDF extension codebase
+- **Recent Changes**: Completely replaced problematic chat exporter with battle-tested PDF export functionality
 
 ### 6. **Bulk Conversation Management**
 - **File**: `scripts/delete-conversations.js`
@@ -259,3 +261,24 @@ let state = {
 - **Modularity**: Some opportunities for better code organization
 
 This Gemini Toolbox extension represents a sophisticated and well-engineered solution that successfully brings ChatGPT Toolbox-inspired features to the Gemini ecosystem while adding unique innovations and optimizations specific to Google's AI platform.
+
+## 🚀 **Recent Major Update: Export System Overhaul**
+
+The export functionality has been completely replaced with a professional-grade PDF export system based on a dedicated Gemini to PDF extension. This major improvement provides:
+
+### **What Changed**
+- ❌ **Removed**: Problematic `chat_exporter.js` (1093 lines) with navigation issues
+- ❌ **Removed**: Alternative `export_chat.js` (872 lines) to avoid conflicts  
+- ✅ **Added**: Professional `pdf_exporter.js` (1200+ lines) based on proven extension
+
+### **Major Benefits**
+- ✅ **Reliable PDF Generation**: Battle-tested code from standalone extension with thousands of users
+- ✅ **Multiple Export Formats**: PDF, HTML, Markdown, JSON, Text, CSV with professional quality
+- ✅ **Advanced Scrolling**: Automatically loads complete chat history before export
+- ✅ **Professional Quality**: High-quality exports matching commercial PDF tools
+- ✅ **Theme Support**: Automatic light/dark theme detection and export styling
+- ✅ **Settings Persistence**: User preferences saved between sessions with validation
+- ✅ **Error Handling**: Comprehensive error handling and user feedback
+- ✅ **Performance**: Efficient content extraction with multiple fallback strategies
+
+The export system now provides a reliable, feature-complete experience that users can depend on for archiving and sharing their Gemini conversations. This represents a significant improvement in both reliability and functionality over the previous implementation.

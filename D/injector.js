@@ -18,7 +18,7 @@
     let isModalOpen = false;
     let promptLibraryInstance;
     let voiceModeInstance;
-    let chatExporterInstance;
+    let pdfExporterInstance;
 
     // State object to hold dynamic data, similar to the target's storage module.
     let state = {
@@ -639,7 +639,7 @@
                         </svg>
                         <span>Bulk Delete</span>
                     </div>
-                    <div id="export-chat-link" class="dropdown-item">
+                    <div id="export-pdf-link" class="dropdown-item">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                             <path d="M14 2H6C4.89543 2 4 2.89543 4 4V20C4 21.1046 4.89543 22 6 22H18C19.1046 22 20 21.1046 20 20V8L14 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                             <path d="M14 2V8H20" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -647,7 +647,7 @@
                             <path d="M13.5 17V11H15.5C16.3284 11 17 11.6716 17 12.5V14.5C17 15.3284 16.3284 16 15.5 16H13.5" stroke="currentColor" stroke-width="2"/>
                             <path d="M17 13.5H13.5" stroke="currentColor" stroke-width="2"/>
                         </svg>
-                        <span>Export Chat</span>
+                        <span>Export to PDF</span>
                     </div>
                 </div>
             </div>
@@ -1245,15 +1245,14 @@
         handleBulkDeleteLogic(); // Attach listeners after modal is created
     }
 
-    // --- NEW: CHAT EXPORT MODAL LOGIC ---
-    function showChatExportModal() {
-        // Legacy function maintained for compatibility
-        // The new ExportChat system handles everything internally
-        if (chatExporterInstance) {
-            chatExporterInstance.showExportModal();
+    // --- NEW: PDF EXPORT MODAL LOGIC ---
+    function showPDFExportModal() {
+        // The new PDFExporter system handles everything internally
+        if (pdfExporterInstance) {
+            pdfExporterInstance.showExportModal();
         } else {
-            console.warn('Chat exporter instance not initialized. Attempting to initialize...');
-            initializeExportChat();
+            console.warn('PDF exporter instance not initialized. Attempting to initialize...');
+            initializePDFExport();
         }
     }
 
@@ -1716,11 +1715,10 @@
             }
         }
 
-        // Wait for HTML, CSS, and export chat CSS to be loaded
-        const [htmlContent, cssContent, exportChatCSS] = await Promise.all([
+        // Wait for HTML and CSS to be loaded
+        const [htmlContent, cssContent] = await Promise.all([
             fetchWebAccessibleResource('prompt_library.html'),
-            fetchWebAccessibleResource('prompt_library.css'),
-            fetchWebAccessibleResource('chat_exporter.css')
+            fetchWebAccessibleResource('prompt_library.css')
         ]);
 
         if (htmlContent) {
@@ -1735,12 +1733,7 @@
             shadow.appendChild(styleElement);
         }
 
-        if (exportChatCSS) {
-            const styleElement = document.createElement('style');
-            styleElement.textContent = exportChatCSS;
-            shadow.appendChild(styleElement);
-            console.log('Export chat CSS injected successfully');
-        }
+
     }
 
     // --- WORD COUNTER FUNCTIONALITY ---
@@ -1780,33 +1773,33 @@
         }
     }
 
-    // --- EXPORT CHAT FUNCTIONALITY ---
+    // --- PDF EXPORT FUNCTIONALITY ---
     
-    async function initializeExportChat() {
-        if (!chatExporterInstance && window.ExportChat) {
+    async function initializePDFExport() {
+        if (!pdfExporterInstance && window.PDFExporter) {
             try {
-                chatExporterInstance = new window.ExportChat();
-                console.log('Enhanced Chat Exporter initialized successfully');
-                chatExporterInstance.showExportModal();
+                pdfExporterInstance = new window.PDFExporter();
+                console.log('PDF Exporter initialized successfully');
+                pdfExporterInstance.showExportModal();
             } catch (error) {
-                console.error('Error initializing Enhanced Chat Exporter:', error);
+                console.error('Error initializing PDF Exporter:', error);
             }
-        } else if (chatExporterInstance) {
+        } else if (pdfExporterInstance) {
             // If already initialized, just show the modal
-            chatExporterInstance.showExportModal();
+            pdfExporterInstance.showExportModal();
         } else {
-            // If ExportChat class is not available from window
-            console.log('ExportChat class not found, checking for exportChatInstance...');
-            if (window.exportChatInstance) {
+            // If PDFExporter class is not available from window
+            console.log('PDFExporter class not found, checking for pdfExporterInstance...');
+            if (window.pdfExporterInstance) {
                 try {
-                    chatExporterInstance = window.exportChatInstance;
-                    console.log('Enhanced Chat Exporter initialized successfully');
-                    chatExporterInstance.showExportModal();
+                    pdfExporterInstance = window.pdfExporterInstance;
+                    console.log('PDF Exporter initialized successfully');
+                    pdfExporterInstance.showExportModal();
                 } catch (error) {
-                    console.error('Error initializing Enhanced Chat Exporter:', error);
+                    console.error('Error initializing PDF Exporter:', error);
                 }
             } else {
-                console.error('ExportChat class not available');
+                console.error('PDFExporter class not available');
             }
         }
     }
@@ -1842,7 +1835,7 @@
             const wordCounterLink = shadow.getElementById('word-counter-link');
             const voiceModeLink = shadow.getElementById('voice-mode-link');
             const voiceSettingsLink = shadow.getElementById('voice-settings-link');
-            const exportChatLink = shadow.getElementById('export-chat-link');
+            const exportPDFLink = shadow.getElementById('export-pdf-link');
             const dropdownArrow = shadow.querySelector('.dropdown-arrow');
             
             // Toggle dropdown on toolbox button click
@@ -1913,10 +1906,10 @@
                 dropdownArrow.classList.remove('rotated');
             });
 
-            // Handle export chat link click
-            exportChatLink.addEventListener('click', (e) => {
+            // Handle export PDF link click
+            exportPDFLink.addEventListener('click', (e) => {
                 e.stopPropagation();
-                initializeExportChat();
+                initializePDFExport();
                 toolboxDropdown.style.display = 'none';
                 dropdownArrow.classList.remove('rotated');
             });

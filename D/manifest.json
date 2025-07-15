@@ -20,7 +20,7 @@
         "prompt_library.js",
         "word_counter.js",
         "voice_mode.js",
-        "chat_exporter.js",
+        "pdf_exporter.js",
         "injector.js"
       ]
     }
@@ -35,8 +35,7 @@
       "resources": [
         "prompt_library.html",
         "prompt_library.css",
-        "chat_exporter.css",
-        "chat_exporter.js",
+        "pdf_exporter.js",
         "prompt_library.js",
         "word_counter.js",
         "voice_mode.js"

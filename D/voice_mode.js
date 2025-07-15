@@ -1,5 +1,5 @@
 // ================================================================
-// VOICE_MODE.JS - Voice Mode Feature with Listen & Download (Fixed)
+// VOICE_MODE.JS - Voice Mode Feature with Listen Functionality
 // ================================================================
 class VoiceMode {
     constructor(shadowRoot) {
@@ -241,12 +241,9 @@ class VoiceMode {
             align-items: center;
         `;
 
-        // Create Listen button
+        // Create Listen button only
         const listenButton = this.createListenButton(responseElement);
-        const downloadButton = this.createDownloadButton(responseElement);
-
         container.appendChild(listenButton);
-        container.appendChild(downloadButton);
 
         return container;
     }
@@ -274,28 +271,7 @@ class VoiceMode {
         return button;
     }
 
-    createDownloadButton(responseElement) {
-        const button = document.createElement('button');
-        button.className = 'voice-download-btn';
-        button.title = 'Download as audio (experimental)';
-        
-        button.innerHTML = `
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                <polyline points="7,10 12,15 17,10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                <line x1="12" y1="15" x2="12" y2="3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-            </svg>
-        `;
 
-        this.styleVoiceButton(button);
-
-        button.addEventListener('click', (e) => {
-            e.stopPropagation();
-            this.handleDownloadClick(responseElement, button);
-        });
-
-        return button;
-    }
 
     styleVoiceButton(button) {
         const isDarkTheme = document.body.classList.contains('dark-theme') || 
@@ -346,101 +322,7 @@ class VoiceMode {
         this.playText(text, button);
     }
 
-    handleDownloadClick(responseElement, button) {
-        const text = this.extractTextFromResponse(responseElement);
-        if (!text) {
-            this.showToast('Could not extract text from this response.');
-            return;
-        }
 
-        // Create and download audio using Web Speech API
-        this.downloadAudioFromSpeech(text, responseElement.dataset.voiceId);
-    }
-
-    downloadAudioFromSpeech(text, responseId) {
-        this.showToast('Starting audio generation... This may take a moment.');
-
-        // Create a simple WAV file with speech synthesis
-        const utterance = new SpeechSynthesisUtterance(text);
-        
-        // Apply settings
-        if (this.voices.length > 0 && this.voices[this.settings.selectedVoice]) {
-            utterance.voice = this.voices[this.settings.selectedVoice];
-        }
-        utterance.rate = this.settings.rate;
-        utterance.pitch = this.settings.pitch;
-        utterance.volume = this.settings.volume;
-
-        // Since we can't directly capture browser speech synthesis,
-        // we'll create a comprehensive audio instruction file
-        const audioInstructions = this.createAudioInstructions(text, responseId);
-        this.downloadTextFile(audioInstructions, `gemini-speech-${responseId || Date.now()}.txt`);
-        
-        this.showToast('Audio instructions downloaded! Use any TTS service to generate audio.');
-    }
-
-    createAudioInstructions(text, responseId) {
-        const selectedVoice = this.voices[this.settings.selectedVoice];
-        
-        return `GEMINI RESPONSE - Audio Generation Package
-==========================================
-Response ID: ${responseId || 'unknown'}
-Generated: ${new Date().toLocaleString()}
-
-RECOMMENDED TTS SETTINGS:
-========================
-Voice: ${selectedVoice?.name || 'Default System Voice'}
-Language: ${selectedVoice?.lang || 'en-US'}
-Speed: ${this.settings.rate}x
-Pitch: ${this.settings.pitch}
-Volume: ${this.settings.volume}
-
-QUICK GENERATION OPTIONS:
-========================
-1. Online TTS Services:
-   • https://ttsmaker.com (Free, high quality)
-   • https://www.naturalreaders.com (Free tier available)
-   • https://speechify.com (Premium features)
-
-2. API Services (for developers):
-   • Google Cloud Text-to-Speech
-   • Amazon Polly
-   • Microsoft Azure Speech Services
-
-3. Desktop Software:
-   • Windows: Built-in Narrator
-   • macOS: Built-in Speech
-   • Linux: espeak or festival
-
-INSTRUCTIONS:
-=============
-1. Copy the text below
-2. Paste into any TTS service
-3. Apply the recommended settings above
-4. Generate and download the audio file
-
-========================================
-TEXT TO CONVERT:
-========================================
-
-${text}
-
-========================================
-END OF PACKAGE
-========================================`;
-    }
-
-    downloadTextFile(content, filename) {
-        const blob = new Blob([content], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-    }
 
     playText(text, button) {
         if (!text) return;

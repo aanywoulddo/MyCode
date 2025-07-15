@@ -100,19 +100,71 @@ class VoiceMode {
     }
 
     checkExistingResponses() {
+        console.log('Checking for existing responses...');
+        
         const responseSelectors = [
             'message-content.model-response-text',
             '.model-response-text',
             '.markdown.markdown-main-panel',
-            '[data-message-author-role="assistant"]'
+            '[data-message-author-role="assistant"]',
+            // Additional selectors for broader detection
+            '.response-container',
+            '.assistant-response',
+            '.ai-message',
+            '.gemini-response'
         ];
+
+        let totalFound = 0;
+        let totalProcessed = 0;
 
         responseSelectors.forEach(selector => {
             const responses = document.querySelectorAll(selector);
+            console.log(`Found ${responses.length} elements for selector: ${selector}`);
+            totalFound += responses.length;
+            
             responses.forEach(response => {
                 this.addVoiceButtonsToResponse(response);
+                totalProcessed++;
             });
         });
+
+        console.log(`Voice Mode: Found ${totalFound} potential responses, processed ${totalProcessed}`);
+
+        // Fallback: Look for any element containing substantial text that looks like AI response
+        setTimeout(() => this.fallbackResponseDetection(), 2000);
+    }
+
+    fallbackResponseDetection() {
+        console.log('Running fallback response detection...');
+        
+        // Look for any div or p elements with substantial text content
+        const allElements = document.querySelectorAll('div, p, article, section');
+        let fallbackCount = 0;
+
+        allElements.forEach(element => {
+            const text = element.textContent || '';
+            
+            // Skip if already processed or has voice controls
+            if (this.processedResponses.has(element) || 
+                element.querySelector('.voice-mode-container')) {
+                return;
+            }
+
+            // Check for AI-like response patterns
+            if (text.length > 50 && 
+                !element.closest('[data-message-author-role="user"]') &&
+                !element.closest('.user-message') &&
+                (text.includes('I\'m') || text.includes('I can') || text.includes('Here\'s') || 
+                 text.includes('According to') || text.includes('Based on') ||
+                 text.length > 200)) {
+                
+                console.log('Fallback detected potential AI response:', element);
+                this.addVoiceButtonsToResponse(element);
+                fallbackCount++;
+            }
+        });
+
+        console.log(`Fallback detection processed ${fallbackCount} additional elements`);
     }
 
     checkForNewResponses(element) {
@@ -145,17 +197,14 @@ class VoiceMode {
             return;
         }
 
-        // Check if buttons already exist (more thorough check)
-        const existingContainer = responseElement.querySelector('.voice-mode-container') ||
-                                responseElement.parentElement?.querySelector('.voice-mode-container') ||
-                                responseElement.closest('div')?.querySelector('.voice-mode-container');
-        
+        if (!this.isAIResponse(responseElement)) return;
+
+        // Check if buttons already exist in this specific element or its immediate children
+        const existingContainer = responseElement.querySelector('.voice-mode-container');
         if (existingContainer) {
             this.processedResponses.add(responseElement);
             return;
         }
-
-        if (!this.isAIResponse(responseElement)) return;
 
         // Mark as processed immediately to prevent duplicates
         this.processedResponses.add(responseElement);
@@ -172,6 +221,11 @@ class VoiceMode {
         
         if (insertionPoint && voiceContainer) {
             insertionPoint.appendChild(voiceContainer);
+            console.log('Voice buttons added successfully to:', responseElement.dataset.voiceId);
+        } else {
+            console.warn('Failed to find insertion point for:', responseElement.dataset.voiceId);
+            // Remove from processed set so it can be tried again
+            this.processedResponses.delete(responseElement);
         }
     }
 
@@ -186,24 +240,30 @@ class VoiceMode {
             return false;
         }
 
-        // Check for AI response indicators
+        // More comprehensive check for AI response indicators
         const isGeminiResponse = element.classList.contains('model-response-text') ||
                                 element.closest('.model-response-text') ||
-                                element.querySelector('.markdown.markdown-main-panel');
+                                element.querySelector('.markdown.markdown-main-panel') ||
+                                element.closest('[data-message-author-role="assistant"]') ||
+                                element.closest('.model-response') ||
+                                element.closest('.ai-response') ||
+                                element.closest('.assistant-message');
+
+        console.log('Checking if AI response:', {
+            element: element,
+            hasText: text.length > 10,
+            isGemini: isGeminiResponse,
+            classes: element.className,
+            parent: element.parentElement?.className
+        });
 
         return isGeminiResponse;
     }
 
     findInsertionPoint(responseElement) {
-        // First check if we already have a voice container in the parent tree
-        const parentCheck = responseElement.closest('.message') || responseElement.parentElement;
-        if (parentCheck?.querySelector('.voice-mode-container, .voice-mode-actions')) {
-            return null; // Already has voice controls
-        }
-
         let insertionPoint = null;
 
-        // Try to find existing action area
+        // Try to find existing action area first
         const possibleContainers = [
             responseElement.querySelector('.response-footer'),
             responseElement.querySelector('.message-actions'),
@@ -220,7 +280,7 @@ class VoiceMode {
         }
 
         if (!insertionPoint) {
-            // Create our own container with unique class to prevent duplicates
+            // Create our own container - simplified approach
             insertionPoint = document.createElement('div');
             insertionPoint.className = 'voice-mode-actions';
             insertionPoint.dataset.voiceControls = 'true';
@@ -233,23 +293,12 @@ class VoiceMode {
                 border-top: 1px solid var(--border-color, #e0e0e0);
             `;
 
-            // For Gemini, append to the parent of the markdown content
+            // Try multiple insertion strategies
             const markdownContent = responseElement.querySelector('.markdown.markdown-main-panel');
             if (markdownContent && markdownContent.parentElement) {
-                // Check if actions container already exists in parent
-                const existingActions = markdownContent.parentElement.querySelector('[data-voice-controls="true"]');
-                if (!existingActions) {
-                    markdownContent.parentElement.appendChild(insertionPoint);
-                } else {
-                    return null;
-                }
+                markdownContent.parentElement.appendChild(insertionPoint);
             } else if (responseElement.parentElement) {
-                const existingActions = responseElement.parentElement.querySelector('[data-voice-controls="true"]');
-                if (!existingActions) {
-                    responseElement.parentElement.appendChild(insertionPoint);
-                } else {
-                    return null;
-                }
+                responseElement.parentElement.appendChild(insertionPoint);
             } else {
                 responseElement.appendChild(insertionPoint);
             }

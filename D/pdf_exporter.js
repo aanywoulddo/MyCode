@@ -790,12 +790,17 @@ window.PDFExporter = class PDFExporter {
         console.log(`[PDF Exporter] Starting PDF generation process (Theme: ${theme})`);
 
         return new Promise((resolve, reject) => {
-            // Create temporary container for PDF rendering
+            // Create temporary container for PDF rendering with proper dimensions
             const container = document.createElement('div');
-            container.style.position = 'absolute';
-            container.style.left = '-9999px';
+            container.style.position = 'fixed';
             container.style.top = '0';
-            container.style.zIndex = '-1';
+            container.style.left = '0';
+            container.style.width = '210mm'; // A4 width
+            container.style.height = '297mm'; // A4 height
+            container.style.zIndex = '-1000';
+            container.style.visibility = 'hidden';
+            container.style.pointerEvents = 'none';
+            container.style.overflow = 'hidden';
             
             const bgPrimary = isDark ? '#131314' : '#FFFFFF';
             const textPrimary = isDark ? '#e8eaed' : '#1f1f1f';
@@ -813,11 +818,16 @@ window.PDFExporter = class PDFExporter {
 
             const wrapper = document.createElement('div');
             wrapper.className = 'pdf-render-wrapper';
+            // Ensure wrapper has proper dimensions to prevent zero-size canvas issues
+            wrapper.style.width = '100%';
+            wrapper.style.minWidth = '200mm';
+            wrapper.style.minHeight = '100px';
+            wrapper.style.boxSizing = 'border-box';
             container.appendChild(wrapper);
 
             // Clean HTML content for PDF
             const cleanContent = (html) => {
-                if (!html) return '';
+                if (!html || typeof html !== 'string') return '';
                 try {
                     const div = document.createElement('div');
                     div.innerHTML = html;
@@ -830,10 +840,15 @@ window.PDFExporter = class PDFExporter {
                     // Remove jslog attributes
                     div.querySelectorAll('[jslog]').forEach(el => el.removeAttribute('jslog'));
                     
-                    return div.innerHTML;
+                    // Ensure content has minimum dimensions if it exists
+                    const content = div.innerHTML.trim();
+                    if (content && content.length > 0) {
+                        return content;
+                    }
+                    return ''; // Return empty string for truly empty content
                 } catch (error) {
                     console.error('[PDF Exporter] Error cleaning HTML content:', error);
-                    return html;
+                    return html || '';
                 }
             };
 
@@ -855,57 +870,76 @@ window.PDFExporter = class PDFExporter {
             
             wrapper.appendChild(header);
 
-            // Add conversation content
+            // Add conversation content with validation
+            let addedContent = false;
             conversation.forEach(msg => {
                 const messagePair = document.createElement('div');
                 messagePair.className = 'message-pair';
+                messagePair.style.minHeight = '20px'; // Ensure minimum height
+                
+                let hasValidContent = false;
                 
                 if (msg.question) {
-                    const questionDiv = document.createElement('div');
-                    questionDiv.className = 'message-part question';
-                    
-                    const questionLabel = document.createElement('p');
-                    questionLabel.className = 'speaker-label user-label';
-                    questionLabel.innerHTML = '<strong>User</strong>';
-                    
-                    const questionContent = document.createElement('div');
-                    questionContent.className = 'content';
-                    questionContent.innerHTML = cleanContent(msg.question);
-                    
-                    questionDiv.appendChild(questionLabel);
-                    questionDiv.appendChild(questionContent);
-                    messagePair.appendChild(questionDiv);
+                    const cleanedQuestion = cleanContent(msg.question);
+                    if (cleanedQuestion && cleanedQuestion.trim().length > 0) {
+                        const questionDiv = document.createElement('div');
+                        questionDiv.className = 'message-part question';
+                        questionDiv.style.minHeight = '20px';
+                        
+                        const questionLabel = document.createElement('p');
+                        questionLabel.className = 'speaker-label user-label';
+                        questionLabel.innerHTML = '<strong>User</strong>';
+                        
+                        const questionContent = document.createElement('div');
+                        questionContent.className = 'content';
+                        questionContent.style.minHeight = '10px';
+                        questionContent.innerHTML = cleanedQuestion;
+                        
+                        questionDiv.appendChild(questionLabel);
+                        questionDiv.appendChild(questionContent);
+                        messagePair.appendChild(questionDiv);
+                        hasValidContent = true;
+                    }
                 }
                 
                 if (msg.answer) {
-                    const answerDiv = document.createElement('div');
-                    answerDiv.className = 'message-part answer';
-                    if (msg.question) {
-                        answerDiv.style.borderTop = `1px solid ${isDark ? '#282829' : '#EFEFEF'}`;
+                    const cleanedAnswer = cleanContent(msg.answer);
+                    if (cleanedAnswer && cleanedAnswer.trim().length > 0) {
+                        const answerDiv = document.createElement('div');
+                        answerDiv.className = 'message-part answer';
+                        answerDiv.style.minHeight = '20px';
+                        if (messagePair.querySelector('.question')) {
+                            answerDiv.style.borderTop = `1px solid ${isDark ? '#282829' : '#EFEFEF'}`;
+                        }
+                        
+                        const answerLabel = document.createElement('p');
+                        answerLabel.className = 'speaker-label gemini-label';
+                        answerLabel.innerHTML = '<strong>Gemini</strong>';
+                        
+                        const answerContent = document.createElement('div');
+                        answerContent.className = 'content';
+                        answerContent.style.minHeight = '10px';
+                        answerContent.innerHTML = cleanedAnswer;
+                        
+                        answerDiv.appendChild(answerLabel);
+                        answerDiv.appendChild(answerContent);
+                        messagePair.appendChild(answerDiv);
+                        hasValidContent = true;
                     }
-                    
-                    const answerLabel = document.createElement('p');
-                    answerLabel.className = 'speaker-label gemini-label';
-                    answerLabel.innerHTML = '<strong>Gemini</strong>';
-                    
-                    const answerContent = document.createElement('div');
-                    answerContent.className = 'content';
-                    answerContent.innerHTML = cleanContent(msg.answer);
-                    
-                    answerDiv.appendChild(answerLabel);
-                    answerDiv.appendChild(answerContent);
-                    messagePair.appendChild(answerDiv);
                 }
                 
-                if (messagePair.querySelector('.content')?.innerHTML.trim()) {
+                if (hasValidContent) {
                     wrapper.appendChild(messagePair);
+                    addedContent = true;
                 }
             });
 
-            if (!wrapper.querySelector('.message-pair')) {
-                const error = 'No content found to generate PDF.';
+            if (!addedContent) {
+                const error = 'No valid content found to generate PDF. Please ensure the conversation has messages with text content.';
                 console.warn('[PDF Exporter]', error);
-                container.parentNode === document.body && document.body.removeChild(container);
+                if (container.parentNode === document.body) {
+                    document.body.removeChild(container);
+                }
                 return reject(new Error(error));
             }
 
@@ -919,11 +953,23 @@ window.PDFExporter = class PDFExporter {
                 filename: filename,
                 image: { type: 'jpeg', quality: 0.95 },
                 html2canvas: { 
-                    scale: 2, 
+                    scale: 1.5, // Reduced scale to avoid memory issues
                     useCORS: true, 
+                    allowTaint: false,
                     backgroundColor: bgPrimary,
                     logging: false,
-                    letterRendering: true
+                    letterRendering: true,
+                    width: container.offsetWidth || 800,
+                    height: container.offsetHeight || 1200,
+                    onclone: function(clonedDoc) {
+                        // Ensure all elements in the cloned document have minimum dimensions
+                        const clonedWrapper = clonedDoc.querySelector('.pdf-render-wrapper');
+                        if (clonedWrapper) {
+                            clonedWrapper.style.width = '100%';
+                            clonedWrapper.style.minWidth = '200mm';
+                            clonedWrapper.style.minHeight = '100px';
+                        }
+                    }
                 },
                 jsPDF: { 
                     unit: 'pt', 
@@ -947,10 +993,18 @@ window.PDFExporter = class PDFExporter {
                     })
                     .catch(error => {
                         console.error('[PDF Exporter] PDF generation failed:', error);
-                        if (error && error.message && /CORS/.test(error.message)) {
-                            reject(new Error(`PDF Generation Error: Failed to load some content (like images) due to security restrictions (CORS). Try exporting as HTML for full fidelity.\n\nDetails: ${error.message}`));
+                        if (error && error.message) {
+                            if (/CORS/.test(error.message)) {
+                                reject(new Error(`PDF Generation Error: Failed to load some content (like images) due to security restrictions (CORS). Try exporting as HTML for full fidelity.\n\nDetails: ${error.message}`));
+                            } else if (/width or height of 0|canvas element with a width or height of 0/i.test(error.message)) {
+                                reject(new Error(`PDF Generation Error: Content rendering failed due to zero-dimension elements. This usually happens with empty content or display issues. Try:\n\n1. Ensure the conversation has visible text content\n2. Try exporting as HTML instead\n3. Refresh the page and try again\n\nDetails: ${error.message}`));
+                            } else if (/InvalidStateError/.test(error.message)) {
+                                reject(new Error(`PDF Generation Error: Canvas rendering failed. This may be due to empty or invalid content. Please try:\n\n1. Export as HTML format instead\n2. Ensure conversation has text content\n3. Refresh page and retry\n\nDetails: ${error.message}`));
+                            } else {
+                                reject(new Error(`PDF Generation Error: ${error.message}`));
+                            }
                         } else {
-                            reject(new Error(`PDF Generation Error: ${error.message || 'Unknown error'}`));
+                            reject(new Error('PDF Generation Error: Unknown error occurred. Try exporting as HTML format instead.'));
                         }
                     })
                     .finally(() => {
@@ -972,14 +1026,25 @@ window.PDFExporter = class PDFExporter {
         
         return `
             @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono&display=swap');
-            .pdf-render-wrapper * { box-sizing: border-box; font-family: inherit; color: inherit; line-height: inherit; }
+            .pdf-render-wrapper * { 
+                box-sizing: border-box; 
+                font-family: inherit; 
+                color: inherit; 
+                line-height: inherit;
+                min-width: 0; /* Prevent layout issues */
+                min-height: 0; /* Prevent layout issues */
+            }
             .pdf-render-wrapper {
                 background-color: ${bgPrimary} !important; 
                 color: ${textPrimary} !important;
                 font-size: 10pt; 
                 line-height: 1.4;
                 padding: 20pt;
-                margin: 0; width: 100%; box-sizing: border-box;
+                margin: 0; 
+                width: 100%; 
+                min-width: 200mm;
+                min-height: 100px;
+                box-sizing: border-box;
             }
             .pdf-render-wrapper .export-header h1 {
                 font-size: 16pt;
@@ -1003,10 +1068,14 @@ window.PDFExporter = class PDFExporter {
                 page-break-inside: avoid; 
                 border: 1px solid ${borderColor}; 
                 border-radius: 6pt;
-                overflow: hidden; 
+                overflow: hidden;
+                min-height: 20px;
+                width: 100%;
             }
             .pdf-render-wrapper .message-part { 
                 padding: 8pt;
+                min-height: 20px;
+                width: 100%;
             }
             .pdf-render-wrapper .message-part.question { background-color: ${bgSecondary}; }
             .pdf-render-wrapper .message-part.answer { background-color: ${bgPrimary}; }
@@ -1018,9 +1087,12 @@ window.PDFExporter = class PDFExporter {
                 margin: 0 0 4pt 0;
             }
             .pdf-render-wrapper .content { 
-                min-width: 0; word-wrap: break-word; 
+                min-width: 0; 
+                min-height: 10px;
+                word-wrap: break-word; 
                 font-size: 10pt; 
-                line-height: 1.4; 
+                line-height: 1.4;
+                width: 100%;
             }
             .pdf-render-wrapper sources-carousel-inline, 
             .pdf-render-wrapper sources-carousel, 

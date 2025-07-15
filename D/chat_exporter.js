@@ -10,6 +10,7 @@ window.ExportChat = class ExportChat {
             compression: false
         };
         this.selectedChat = null;
+        this.pendingExport = null; // Track pending export after navigation
     }
 
     init() {
@@ -328,10 +329,17 @@ window.ExportChat = class ExportChat {
             this.exportSettings.fileName = filenameInput.value.trim();
         });
 
-        // Export button
+        // Export button - Modified to handle direct export if we have pending export
         const exportBtn = modal.querySelector('#start-export');
         exportBtn.addEventListener('click', () => {
-            this.performExport(modal);
+            if (this.pendingExport) {
+                // We're already on the right chat, just export
+                this.closeModal(modal);
+                this.performDirectExport();
+            } else {
+                // Normal export flow
+                this.performExport(modal);
+            }
         });
 
         // Cancel button
@@ -563,39 +571,37 @@ window.ExportChat = class ExportChat {
 
     async navigateToChatAndExport(chatId, chatTitle) {
         try {
-            // Find the conversation element
-            let conversationElement = document.querySelector(`[data-conversation-id="${chatId}"], [data-chat-id="${chatId}"], #${chatId}`);
-            
-            if (!conversationElement) {
-                // Fallback: find by title
-                const conversations = this.getAllConversations();
-                const targetConversation = conversations.find(conv => conv.id === chatId || conv.title === chatTitle);
-                if (targetConversation && targetConversation.element) {
-                    conversationElement = targetConversation.element;
-                }
-            }
+            // Store the pending export info
+            this.pendingExport = {
+                chatId: chatId,
+                chatTitle: chatTitle
+            };
 
+            // Find the conversation element
+            const conversationElement = document.querySelector(`[data-conversation-id="${chatId}"], [data-chat-id="${chatId}"], #${chatId}`);
+            
             if (conversationElement) {
-                // Instead of click, get href if it's a link
-                let navigated = false;
-                if (conversationElement.tagName === 'A' && conversationElement.href) {
-                    window.location.href = conversationElement.href;
-                    navigated = true;
-                } else {
-                    conversationElement.click();
-                    navigated = true;
-                }
+                // Click on the conversation to navigate to it
+                conversationElement.click();
                 
-                if (navigated) {
-                    // Wait for the conversation to load
-                    await this.waitForConversationLoad();
-                }
+                // Wait for the conversation to load
+                await this.waitForConversationLoad();
                 
-                // Show export options modal
-                this.showExportOptionsModal(chatId, chatTitle);
+                // Now perform the export directly
+                await this.performDirectExport();
             } else {
-                // Fallback: show export options for current conversation
-                this.showExportOptionsModal(null, 'Current Conversation');
+                // If we can't find the specific element, try to find by title
+                const conversations = this.getAllConversations();
+                const targetConversation = conversations.find(conv => conv.title === chatTitle);
+                
+                if (targetConversation && targetConversation.element) {
+                    targetConversation.element.click();
+                    await this.waitForConversationLoad();
+                    await this.performDirectExport();
+                } else {
+                    // Fallback: show export options for current conversation
+                    this.showExportOptionsModal(null, 'Current Conversation');
+                }
             }
         } catch (error) {
             console.error('Error navigating to chat:', error);
@@ -604,22 +610,34 @@ window.ExportChat = class ExportChat {
         }
     }
 
-    async waitForConversationLoad() {
+        async waitForConversationLoad() {
         return new Promise((resolve) => {
-            const maxWait = 10000; // 10 seconds max wait
-            const interval = 200;
-            let elapsed = 0;
-
+            let attempts = 0;
+            const maxAttempts = 50; // 5 seconds max wait
+            
             const checkForContent = () => {
-                const conversationContent = document.querySelector('div.conversation-container, message-content, user-query, [data-test-id="conversation-content"]');
-                if (conversationContent) {
-                    resolve();
-                } else if (elapsed >= maxWait) {
-                    console.warn('Timeout waiting for conversation load');
-                    resolve(); // Proceed anyway
+                attempts++;
+                
+                // Look for conversation content with multiple selectors
+                const conversationContent = document.querySelector(
+                    'div.conversation-container, ' +
+                    'message-content, ' +
+                    'user-query, ' +
+                    '[data-test-id="conversation-content"], ' +
+                    '.markdown-main-panel, ' +
+                    '.output-content'
+                );
+                
+                // Also check if there are any messages loaded
+                const messages = document.querySelectorAll(
+                    'message-content, user-query, [data-test-id="message"], .message'
+                );
+                
+                if ((conversationContent && messages.length > 0) || attempts >= maxAttempts) {
+                    // Give it a bit more time for the content to fully render
+                    setTimeout(() => resolve(), 300);
                 } else {
-                    elapsed += interval;
-                    setTimeout(checkForContent, interval);
+                    setTimeout(checkForContent, 100);
                 }
             };
             
@@ -657,37 +675,84 @@ window.ExportChat = class ExportChat {
 
     extractChatContent() {
         const messages = [];
-        const containers = document.querySelectorAll('div.conversation-container');
-
-        containers.forEach((container, index) => {
-            const userEl = container.querySelector('user-query');
-            if (userEl) {
-                const textEl = userEl.querySelector('.query-text-line');
-                const html = textEl ? textEl.innerHTML : userEl.innerHTML;
-                const text = textEl ? textEl.textContent.trim() : userEl.textContent.trim();
-                messages.push({
-                    role: 'user',
-                    html,
-                    text,
-                    timestamp: new Date().toISOString(),
-                    index
-                });
+        const messageElements = document.querySelectorAll(
+            'message-content, ' +
+            'user-query, ' +
+            '[data-test-id="message"], ' +
+            '.message, ' +
+            'div.conversation-container'
+        );
+        
+        messageElements.forEach((element, index) => {
+            // Try to extract user messages
+            const userQuery = element.querySelector('user-query, user-query-content, .query-text-line');
+            if (userQuery) {
+                const content = this.extractMessageContent(userQuery);
+                if (content) {
+                    messages.push({
+                        role: 'user',
+                        content: content,
+                        timestamp: new Date().toISOString(),
+                        index: messages.length
+                    });
+                }
             }
-
-            const assistantEl = container.querySelector('message-content');
-            if (assistantEl) {
-                const mdEl = assistantEl.querySelector('.markdown-main-panel, .output-content .markdown, .output-content');
-                const html = mdEl ? mdEl.innerHTML : assistantEl.innerHTML;
-                const text = mdEl ? mdEl.textContent.trim() : assistantEl.textContent.trim();
-                messages.push({
-                    role: 'assistant',
-                    html,
-                    text,
-                    timestamp: new Date().toISOString(),
-                    index
-                });
+            
+            // Try to extract assistant messages
+            const assistantMessage = element.querySelector(
+                'message-content, ' +
+                '.markdown-main-panel, ' +
+                '.output-content .markdown, ' +
+                '.output-content'
+            );
+            if (assistantMessage && !userQuery) { // Avoid duplicates
+                const content = this.extractMessageContent(assistantMessage);
+                if (content) {
+                    messages.push({
+                        role: 'assistant',
+                        content: content,
+                        timestamp: new Date().toISOString(),
+                        index: messages.length
+                    });
+                }
             }
         });
+        
+        // If no messages found, try alternative extraction
+        if (messages.length === 0) {
+            console.warn('No messages found with primary selectors, trying alternative extraction');
+            
+            // Try to find all conversation containers
+            const conversationContainers = document.querySelectorAll('div.conversation-container');
+            conversationContainers.forEach(container => {
+                const userElement = container.querySelector('user-query');
+                const assistantElement = container.querySelector('message-content');
+                
+                if (userElement) {
+                    const content = this.extractTextFromElement(userElement);
+                    if (content) {
+                        messages.push({
+                            role: 'user',
+                            content: content,
+                            timestamp: new Date().toISOString(),
+                            index: messages.length
+                        });
+                    }
+                }
+                
+                if (assistantElement) {
+                    const content = this.extractTextFromElement(assistantElement);
+                    if (content) {
+                        messages.push({
+                            role: 'assistant',
+                            content: content,
+                            timestamp: new Date().toISOString(),
+                            index: messages.length
+                        });
+                    }
+                }
+            });
+        }
         
         return {
             title: this.getConversationTitle(),
@@ -698,8 +763,29 @@ window.ExportChat = class ExportChat {
     }
 
     getConversationTitle() {
-        const titleElement = document.querySelector('.conversation-title, .title, h1, h2, [data-test-id="conversation-title"]');
-        return titleElement ? titleElement.textContent.trim() : 'Gemini Chat Export';
+        // Try multiple selectors to find the conversation title
+        const titleSelectors = [
+            '.conversation-title',
+            '.title',
+            'h1',
+            'h2',
+            '[data-test-id="conversation-title"]',
+            '.chat-title'
+        ];
+        
+        for (const selector of titleSelectors) {
+            const titleElement = document.querySelector(selector);
+            if (titleElement && titleElement.textContent.trim()) {
+                return titleElement.textContent.trim();
+            }
+        }
+        
+        // If we have pending export info, use that title
+        if (this.pendingExport && this.pendingExport.chatTitle) {
+            return this.pendingExport.chatTitle;
+        }
+        
+        return 'Gemini Chat Export';
     }
 
     formatExportData(chatContent, format) {
@@ -1083,6 +1169,99 @@ window.ExportChat = class ExportChat {
         }
         
         return 'light';
+    }
+
+    async performDirectExport() {
+        // Check if we have pending export info
+        if (!this.pendingExport) {
+            console.error('No pending export information');
+            return;
+        }
+
+        const format = this.exportSettings.format;
+        const fileName = this.exportSettings.fileName || 'gemini-chat-export';
+        
+        try {
+            // Extract the chat content from the current page
+            const chatContent = this.extractChatContent();
+            
+            // Add the title from our pending export
+            if (this.pendingExport.chatTitle) {
+                chatContent.title = this.pendingExport.chatTitle;
+            }
+            
+            const exportData = this.formatExportData(chatContent, format);
+            
+            this.downloadFile(exportData, fileName, format);
+            this.showSuccessNotification();
+            this.saveSettings();
+            
+            // Clear the pending export
+            this.pendingExport = null;
+        } catch (error) {
+            console.error('Export failed:', error);
+            this.showErrorNotification('Export failed. Please try again.');
+            this.pendingExport = null;
+        }
+    }
+
+    extractTextFromElement(element) {
+        if (!element) return '';
+        
+        // Clone the element to avoid modifying the original
+        const clone = element.cloneNode(true);
+        
+        // Remove any UI elements that shouldn't be in the export
+        const selectorsToRemove = [
+            '.gemini-export-checkbox-container',
+            'button',
+            '.icon-button',
+            'mat-icon',
+            'style',
+            'script'
+        ];
+        
+        selectorsToRemove.forEach(selector => {
+            clone.querySelectorAll(selector).forEach(el => el.remove());
+        });
+        
+        // Get the text content
+        return clone.textContent.trim();
+    }
+
+    extractMessageContent(element) {
+        if (!element) return '';
+        
+        // Try multiple selectors to find the message content
+        const contentSelectors = [
+            '.message-content',
+            '.content',
+            '.markdown-main-panel',
+            '.output-content',
+            '.query-text-line',
+            'p',
+            'div[data-message-content]',
+            '[data-test-id="message-content"]'
+        ];
+        
+        for (const selector of contentSelectors) {
+            const contentElement = element.querySelector(selector);
+            if (contentElement && contentElement.textContent.trim()) {
+                return this.extractTextFromElement(contentElement);
+            }
+        }
+        
+        // Fallback to the element's own text content
+        return this.extractTextFromElement(element);
+    }
+
+    // Add this method to handle the selection and immediate export
+    selectChatAndExport(chatId, chatTitle) {
+        // Set export settings if needed
+        this.saveSettings();
+        
+        // Navigate and export
+        this.navigateToChatAndExport(chatId, chatTitle);
     }
 }
 

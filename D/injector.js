@@ -1720,7 +1720,7 @@
         const [htmlContent, cssContent, exportChatCSS] = await Promise.all([
             fetchWebAccessibleResource('prompt_library.html'),
             fetchWebAccessibleResource('prompt_library.css'),
-            fetchWebAccessibleResource('export_chat.css')
+            fetchWebAccessibleResource('chat_exporter.css')
         ]);
 
         if (htmlContent) {

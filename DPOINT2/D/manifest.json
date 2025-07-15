@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Gemini Folders (Replicated)",
+  "version": "1.0",
+  "description": "Organize your Gemini chats into collapsible folders.",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["*://gemini.google.com/*"],
+      "js": ["injector.js"]
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+} 

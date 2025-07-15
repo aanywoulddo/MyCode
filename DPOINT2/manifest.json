@@ -1,0 +1,46 @@
+{
+  "manifest_version": 3,
+  "name": "Gemini Toolbox",
+  "version": "1.2",
+  "description": "Enhance Gemini with folders, prompt library, word counter, and a powerful chat exporter.",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "downloads"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://gemini.google.com/*"],
+      "js": [
+        "lib/html2pdf.bundle.min.js",
+        "prompt_library.js",
+        "word_counter.js",
+        "voice_mode.js",
+        "pdf_exporter.js",
+        "injector.js"
+      ]
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "prompt_library.html",
+        "prompt_library.css",
+        "pdf_exporter.js",
+        "prompt_library.js",
+        "word_counter.js",
+        "voice_mode.js"
+      ],
+      "matches": ["*://gemini.google.com/*"]
+    }
+  ]
+} 

@@ -24,7 +24,7 @@ D/
 ├── word_counter.js       # Word counting functionality (288 lines)  
 ├── voice_mode.js         # Voice/TTS features (735 lines)
 ├── chat_exporter.js      # Chat export system (1093 lines)
-├── export_chat.js        # Alternative export implementation (872 lines)
+├── [REMOVED] export_chat.js        # Alternative export implementation (was 872 lines, removed to avoid conflicts)
 ├── scripts/
 │   └── delete-conversations.js  # Bulk deletion (357 lines)
 ├── icons/                # Extension icons (8 sizes)
@@ -81,14 +81,15 @@ D/
 - **Technical**: Uses Web Speech API with MediaRecorder fallbacks
 
 ### 5. **Chat Export System**
-- **Files**: `chat_exporter.js`, `export_chat.js`
+- **File**: `chat_exporter.js` (improved with pending export functionality)
 - **Formats**: PDF, HTML, Markdown, JSON, Text, CSV
 - **Features**:
   - Multi-format export with customization
   - Theme-aware export styling
   - Professional PDF generation with html2pdf
   - Bulk conversation export capabilities
-- **Architecture**: Dual implementation approach for flexibility
+- **Architecture**: Enhanced with pending export tracking and improved navigation flow
+- **Recent Fixes**: Added `pendingExport` tracking, improved `waitForConversationLoad`, enhanced content extraction with fallback strategies
 
 ### 6. **Bulk Conversation Management**
 - **File**: `scripts/delete-conversations.js`

@@ -908,5 +908,3 @@ End of Package
         };
     }
 }
-
-export default VoiceMode;
